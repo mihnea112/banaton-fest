@@ -10,35 +10,96 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 
 type TicketCategory = 'general' | 'vip';
 
+interface ProductVariant {
+  id: string;
+  label: string;
+  price: number;
+}
+
 interface TicketProduct {
   id: string;
   category: TicketCategory;
   name: string;
   durationLabel: string;
-  price: number;
+  price: number; // Base price or starting price
   description?: string;
-  isDaySpecific?: boolean;
+  variants?: ProductVariant[];
 }
 
 const PRODUCTS: TicketProduct[] = [
   // General Access
-  { id: 'gen-4day', category: 'general', name: 'Full Pass', durationLabel: '4 Zile', price: 550, description: 'Acces complet la festival (Joi - Duminică)' },
-  { id: 'gen-3day', category: 'general', name: 'Abonament 3 Zile', durationLabel: '3 Zile', price: 450, description: 'Alege oricare 3 zile consecutive' },
-  { id: 'gen-2day', category: 'general', name: 'Abonament 2 Zile', durationLabel: '2 Zile', price: 350, description: 'Perfect pentru un weekend prelungit' },
-  { id: 'gen-1day-fri', category: 'general', name: 'Bilet o Zi - Vineri', durationLabel: '1 Zi', price: 200, isDaySpecific: true },
-  { id: 'gen-1day-sat', category: 'general', name: 'Bilet o Zi - Sâmbătă', durationLabel: '1 Zi', price: 250, isDaySpecific: true },
-  { id: 'gen-1day-sun', category: 'general', name: 'Bilet o Zi - Duminică', durationLabel: '1 Zi', price: 200, isDaySpecific: true },
-  { id: 'gen-1day-mon', category: 'general', name: 'Bilet o Zi - Luni', durationLabel: '1 Zi', price: 150, isDaySpecific: true },
+  { 
+    id: 'gen-4day', 
+    category: 'general', 
+    name: 'Full Pass', 
+    durationLabel: '4 Zile', 
+    price: 550, 
+    description: 'Acces complet la festival (Joi - Duminică)' 
+  },
+  { 
+    id: 'gen-3day', 
+    category: 'general', 
+    name: 'Abonament 3 Zile', 
+    durationLabel: '3 Zile', 
+    price: 450, 
+    description: 'Alege oricare 3 zile consecutive' 
+  },
+  { 
+    id: 'gen-2day', 
+    category: 'general', 
+    name: 'Abonament 2 Zile', 
+    durationLabel: '2 Zile', 
+    price: 350, 
+    description: 'Perfect pentru un weekend prelungit',
+    variants: [
+      { id: 'gen-2day-thu-fri', label: 'Joi - Vineri', price: 350 },
+      { id: 'gen-2day-fri-sat', label: 'Vineri - Sâmbătă', price: 350 },
+      { id: 'gen-2day-sat-sun', label: 'Sâmbătă - Duminică', price: 350 }
+    ]
+  },
+  { 
+    id: 'gen-1day', 
+    category: 'general', 
+    name: 'Bilet o Zi', 
+    durationLabel: '1 Zi', 
+    price: 150, 
+    description: 'Alege ziua preferată de festival',
+    variants: [
+      { id: 'gen-1day-thu', label: 'Joi', price: 150 },
+      { id: 'gen-1day-fri', label: 'Vineri', price: 200 },
+      { id: 'gen-1day-sat', label: 'Sâmbătă', price: 250 },
+      { id: 'gen-1day-sun', label: 'Duminică', price: 200 }
+    ]
+  },
 
   // VIP
-  { id: 'vip-4day', category: 'vip', name: 'VIP Full Pass', durationLabel: '4 Zile', price: 1100, description: 'Experiența completă VIP' },
-  { id: 'vip-1day-fri', category: 'vip', name: 'VIP - Vineri', durationLabel: '1 Zi', price: 450, isDaySpecific: true },
-  { id: 'vip-1day-sat', category: 'vip', name: 'VIP - Sâmbătă', durationLabel: '1 Zi', price: 550, isDaySpecific: true },
-  { id: 'vip-1day-sun', category: 'vip', name: 'VIP - Duminică', durationLabel: '1 Zi', price: 450, isDaySpecific: true },
+  { 
+    id: 'vip-4day', 
+    category: 'vip', 
+    name: 'VIP Full Pass', 
+    durationLabel: '4 Zile', 
+    price: 1100, 
+    description: 'Experiența completă VIP' 
+  },
+  { 
+    id: 'vip-1day', 
+    category: 'vip', 
+    name: 'VIP - 1 Zi', 
+    durationLabel: '1 Zi', 
+    price: 450, 
+    description: 'Experiență VIP pentru o zi',
+    variants: [
+      { id: 'vip-1day-thu', label: 'Joi', price: 400 },
+      { id: 'vip-1day-fri', label: 'Vineri', price: 450 },
+      { id: 'vip-1day-sat', label: 'Sâmbătă', price: 550 },
+      { id: 'vip-1day-sun', label: 'Duminică', price: 450 }
+    ]
+  },
 ];
 
 export default function Tickets() {
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
 
   const updateQuantity = (id: string, delta: number) => {
     setCart(prev => {
@@ -52,63 +113,142 @@ export default function Tickets() {
     });
   };
 
+  const toggleExpand = (id: string) => {
+    setExpandedProducts(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Helper to find product details (including variants) by ID
+  const getProductDetails = (id: string) => {
+    for (const p of PRODUCTS) {
+      if (p.id === id) return { ...p, variantLabel: null };
+      if (p.variants) {
+        const v = p.variants.find(v => v.id === id);
+        if (v) return { ...p, id: v.id, name: p.name, price: v.price, variantLabel: v.label };
+      }
+    }
+    return null;
+  };
+
   const totalAmount = Object.entries(cart).reduce((sum, [id, qty]) => {
-    const product = PRODUCTS.find(p => p.id === id);
+    const product = getProductDetails(id);
     return sum + (product ? product.price * qty : 0);
   }, 0);
 
   const totalItems = Object.values(cart).reduce((sum, qty) => sum + qty, 0);
 
-  const renderProductRow = (product: TicketProduct) => {
-    const qty = cart[product.id] || 0;
-    
+  const renderQuantityControls = (id: string, price: number, compact = false) => {
+    const qty = cart[id] || 0;
     return (
-      <div key={product.id} className={cn(
-        "flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border transition-all duration-200",
-        qty > 0 
-          ? "bg-brand-surface border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.1)]" 
-          : "bg-brand-surface/30 border-white/5 hover:border-white/10"
-      )}>
-        <div className="flex flex-col gap-1 mb-4 sm:mb-0">
-          <div className="flex items-center gap-3">
-            <span className="font-bold text-white text-lg">{product.name}</span>
-            {product.isDaySpecific && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-brand-text uppercase tracking-wider">
-                {product.id.split('-')[2].toUpperCase()}
-              </span>
-            )}
-          </div>
-          {product.description && (
-            <p className="text-sm text-brand-text/70">{product.description}</p>
-          )}
-          <div className="flex items-center gap-2 mt-1 sm:hidden">
-            <span className="text-accent-cyan font-bold">{product.price} RON</span>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between sm:justify-end gap-6">
-          <span className="hidden sm:block text-accent-cyan font-bold text-lg">{product.price} RON</span>
-          
-          <div className="flex items-center gap-3 bg-brand-deep/50 rounded-lg p-1 border border-white/10">
-            <button 
-              onClick={() => updateQuantity(product.id, -1)}
-              className="size-8 rounded bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-colors disabled:opacity-30"
-              disabled={qty === 0}
-            >
-              <span className="material-symbols-outlined text-sm font-bold">remove</span>
-            </button>
-            <span className="font-bold text-white min-w-[24px] text-center">{qty}</span>
-            <button 
-              onClick={() => updateQuantity(product.id, 1)}
-              className="size-8 rounded bg-accent-cyan hover:bg-cyan-400 text-brand-deep flex items-center justify-center transition-colors shadow-[0_0_10px_rgba(0,240,255,0.3)]"
-            >
-              <span className="material-symbols-outlined text-sm font-bold">add</span>
-            </button>
-          </div>
-        </div>
+      <div className={cn("flex items-center gap-3 bg-brand-deep/50 rounded-lg p-1 border border-white/10", compact && "gap-2")}>
+        <button 
+          onClick={(e) => { e.stopPropagation(); updateQuantity(id, -1); }}
+          className={cn("rounded bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-colors disabled:opacity-30", compact ? "size-6" : "size-8")}
+          disabled={qty === 0}
+        >
+          <span className="material-symbols-outlined text-sm font-bold">remove</span>
+        </button>
+        <span className={cn("font-bold text-white text-center", compact ? "min-w-[16px] text-sm" : "min-w-[24px]")}>{qty}</span>
+        <button 
+          onClick={(e) => { e.stopPropagation(); updateQuantity(id, 1); }}
+          className={cn("rounded bg-accent-cyan hover:bg-cyan-400 text-brand-deep flex items-center justify-center transition-colors shadow-[0_0_10px_rgba(0,240,255,0.3)]", compact ? "size-6" : "size-8")}
+        >
+          <span className="material-symbols-outlined text-sm font-bold">add</span>
+        </button>
       </div>
     );
   };
+
+  const renderProductRow = (product: TicketProduct) => {
+    const hasVariants = !!product.variants;
+    const isExpanded = expandedProducts[product.id];
+    
+    // Calculate total quantity for this product (sum of variants if any)
+    const totalQty = hasVariants 
+      ? product.variants!.reduce((sum, v) => sum + (cart[v.id] || 0), 0)
+      : (cart[product.id] || 0);
+
+    return (
+      <div key={product.id} className={cn(
+        "flex flex-col rounded-xl border transition-all duration-200 overflow-hidden",
+        totalQty > 0 || isExpanded
+          ? "bg-brand-surface border-accent-cyan/50 shadow-[0_0_15px_rgba(0,240,255,0.1)]" 
+          : "bg-brand-surface/30 border-white/5 hover:border-white/10"
+      )}>
+        {/* Main Row */}
+        <div 
+          className={cn("flex flex-col sm:flex-row sm:items-center justify-between p-4 cursor-pointer", hasVariants && "hover:bg-white/5")}
+          onClick={() => hasVariants && toggleExpand(product.id)}
+        >
+          <div className="flex flex-col gap-1 mb-4 sm:mb-0">
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-white text-lg">{product.name}</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-brand-text uppercase tracking-wider">
+                {product.durationLabel}
+              </span>
+            </div>
+            {product.description && (
+              <p className="text-sm text-brand-text/70">{product.description}</p>
+            )}
+            <div className="flex items-center gap-2 mt-1 sm:hidden">
+              <span className="text-accent-cyan font-bold">
+                {hasVariants ? `de la ${Math.min(...product.variants!.map(v => v.price))} RON` : `${product.price} RON`}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between sm:justify-end gap-6">
+            <span className="hidden sm:block text-accent-cyan font-bold text-lg">
+              {hasVariants ? `de la ${Math.min(...product.variants!.map(v => v.price))} RON` : `${product.price} RON`}
+            </span>
+            
+            {hasVariants ? (
+              <div className="flex items-center gap-2">
+                 {totalQty > 0 && (
+                   <span className="bg-accent-cyan text-brand-deep text-xs font-bold px-2 py-1 rounded-full">
+                     {totalQty} selectate
+                   </span>
+                 )}
+                 <span className={cn("material-symbols-outlined text-accent-cyan transition-transform duration-300", isExpanded && "rotate-180")}>
+                   expand_more
+                 </span>
+              </div>
+            ) : (
+              renderQuantityControls(product.id, product.price)
+            )}
+          </div>
+        </div>
+
+        {/* Variants Section */}
+        {hasVariants && (
+          <div className={cn(
+            "bg-black/20 border-t border-white/5 transition-all duration-300 ease-in-out overflow-hidden",
+            isExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
+          )}>
+            <div className="p-4 grid gap-3">
+              <p className="text-sm text-brand-text mb-1 font-medium">Selectează perioada:</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {product.variants!.map(variant => (
+                  <div key={variant.id} className={cn(
+                    "flex items-center justify-between p-3 rounded-lg border transition-colors",
+                    (cart[variant.id] || 0) > 0 
+                      ? "bg-accent-cyan/10 border-accent-cyan/50" 
+                      : "bg-white/5 border-white/5 hover:bg-white/10"
+                  )}>
+                    <div className="flex flex-col">
+                      <span className="text-white font-medium text-sm">{variant.label}</span>
+                      <span className="text-accent-cyan text-xs font-bold">{variant.price} RON</span>
+                    </div>
+                    {renderQuantityControls(variant.id, variant.price, true)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
 
   return (
     <div className="bg-brand-deep min-h-screen flex flex-col font-manrope text-slate-100 overflow-x-hidden selection:bg-accent-cyan selection:text-brand-deep">
@@ -202,7 +342,7 @@ export default function Tickets() {
                     </div>
                   ) : (
                     Object.entries(cart).map(([id, qty]) => {
-                      const product = PRODUCTS.find(p => p.id === id);
+                      const product = getProductDetails(id);
                       if (!product) return null;
                       return (
                         <div key={id} className="flex flex-col gap-2 pb-4 border-b border-white/10 border-dashed last:border-0">
@@ -213,6 +353,9 @@ export default function Tickets() {
                                 <p className="text-xs text-brand-text uppercase font-semibold">{product.category === 'vip' ? 'VIP' : 'General'}</p>
                               </div>
                               <p className="font-bold text-white text-sm">{product.name}</p>
+                              {product.variantLabel && (
+                                <p className="text-xs text-accent-cyan mt-0.5">{product.variantLabel}</p>
+                              )}
                             </div>
                             <div className="text-right">
                               <p className="text-accent-cyan font-bold">{product.price * qty} RON</p>

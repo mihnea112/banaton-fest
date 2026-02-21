@@ -46,7 +46,7 @@ export default function Home() {
                 29.05 - 01.06 • Timișoara
               </span>
               <h1 className="text-white text-5xl md:text-7xl font-black leading-tight tracking-tight drop-shadow-xl">
-                Banaton <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent-cyan via-white to-accent-gold">Fest</span>
+                Magia <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent-cyan via-white to-accent-gold">Banatului</span>
               </h1>
               <p className="text-white/90 text-lg md:text-xl font-medium leading-relaxed max-w-2xl drop-shadow-md">
                 Patru zile de folk-pop balcanic, tradiții reinventate și o atmosferă electrizantă. Experimentează fuziunea culturală a anului.
