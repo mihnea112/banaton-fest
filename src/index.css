@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #6A0DAD;
+  --color-secondary: #4B0082;
+  --color-background-light: #f7f5f8;
+  --color-background-dark: #120818;
+  --color-accent-cyan: #00F0FF;
+  --color-accent-gold: #FFD700;
+  --color-accent-pink: #FF00FF;
+  
+  --color-brand-deep: #1a0b2e;
+  --color-brand-surface: #2d1b4e;
+  --color-brand-text: #e0d4fc;
+  
+  --font-display: "Plus Jakarta Sans", sans-serif;
+  --font-body: "Noto Sans", sans-serif;
+  --font-manrope: "Manrope", sans-serif;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #1A0B2E;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #4C2A85;
+    border-radius: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #FFD700;
+  }
+}
