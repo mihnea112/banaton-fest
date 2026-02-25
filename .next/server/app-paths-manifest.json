@@ -1,10 +1,6 @@
 {
-  "/api/order/draft/route": "app/api/order/draft/route.js",
-  "/api/stripe/checkout-session/route": "app/api/stripe/checkout-session/route.js",
-  "/api/order/[publicToken]/items/route": "app/api/order/[publicToken]/items/route.js",
-  "/api/order/public/route": "app/api/order/public/route.js",
-  "/tickets/page": "app/tickets/page.js",
   "/page": "app/page.js",
+  "/tickets/page": "app/tickets/page.js",
   "/checkout/page": "app/checkout/page.js",
   "/success/page": "app/success/page.js"
 }
