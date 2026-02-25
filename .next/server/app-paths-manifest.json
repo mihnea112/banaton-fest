@@ -1,0 +1,9 @@
+{
+  "/api/order/public/route": "app/api/order/public/route.js",
+  "/api/order/draft/route": "app/api/order/draft/route.js",
+  "/api/order/[publicToken]/items/route": "app/api/order/[publicToken]/items/route.js",
+  "/checkout/page": "app/checkout/page.js",
+  "/success/page": "app/success/page.js",
+  "/page": "app/page.js",
+  "/tickets/page": "app/tickets/page.js"
+}
