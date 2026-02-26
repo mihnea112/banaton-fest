@@ -544,7 +544,10 @@ export async function PUT(
         .delete()
         .in("order_item_id", existingItemIds);
 
-      if (delDaysRes.error) {
+      if (
+        delDaysRes.error &&
+        !String(delDaysRes.error.message || "").includes("order_item_id")
+      ) {
         console.warn(
           "[order-items] order_item_days delete warning",
           delDaysRes.error,
@@ -555,48 +558,14 @@ export async function PUT(
     // Curățăm eventuale rezervări VIP pentru că structura biletelor s-a schimbat
     console.log("[order-items] clearing vip reservations for order", orderId);
 
-    // 1) Find reservation ids for this order
-    const existingVipRes = await supabaseAdmin
-      .from("vip_table_reservations")
-      .select("id")
+    await supabaseAdmin
+      .from("vip_table_reservation_days")
+      .delete()
       .eq("order_id", orderId);
-
-    if (existingVipRes.error) {
-      console.warn(
-        "[order-items] vip_table_reservations select warning",
-        existingVipRes.error,
-      );
-    }
-
-    const vipReservationIds = (existingVipRes.data || []).map((r) => String(r.id));
-
-    // 2) Delete reservation days (child table) by vip_table_reservation_id
-    if (vipReservationIds.length > 0) {
-      const delVipDays = await supabaseAdmin
-        .from("vip_table_reservation_days")
-        .delete()
-        .in("vip_table_reservation_id", vipReservationIds);
-
-      if (delVipDays.error) {
-        console.warn(
-          "[order-items] vip_table_reservation_days delete warning",
-          delVipDays.error,
-        );
-      }
-    }
-
-    // 3) Delete reservations (parent table)
-    const delVipRes = await supabaseAdmin
+    await supabaseAdmin
       .from("vip_table_reservations")
       .delete()
       .eq("order_id", orderId);
-
-    if (delVipRes.error) {
-      console.warn(
-        "[order-items] vip_table_reservations delete warning",
-        delVipRes.error,
-      );
-    }
 
     const deleteItemsRes = await supabaseAdmin
       .from("order_items")
@@ -772,13 +741,6 @@ export async function PUT(
     const totalItems = normalizedLines.reduce((s, x) => s + x.qty, 0);
 
     const updateCandidates: Record<string, unknown>[] = [
-      // most likely in your schema
-      { total_ron: totalAmount, total_items: totalItems },
-      { total_ron: totalAmount },
-      { subtotal_ron: totalAmount, total_items: totalItems },
-      { subtotal_ron: totalAmount },
-
-      // fallbacks for older schema variants
       { total_amount: totalAmount, total_items: totalItems },
       { total_amount: totalAmount },
       { total: totalAmount, total_items: totalItems },
