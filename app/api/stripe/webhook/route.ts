@@ -247,7 +247,16 @@ function buildEnrichmentPatchFromSession(params: {
 
   const details = session.customer_details ?? null;
   const name = asString(details?.name) ?? null;
-  const email = asString(details?.email) ?? null;
+
+  // IMPORTANT: We never trust Stripe-collected email.
+  // Only accept the email that your app sent from the checkout form via metadata.
+  const md = (session.metadata || {}) as Record<string, unknown>;
+  const emailFromForm =
+    asString(md.customer_email) ||
+    asString(md.customerEmail) ||
+    asString(md.email) ||
+    null;
+
   const phone = asString(details?.phone) ?? null;
 
   const addr = details?.address ?? null;
@@ -279,7 +288,8 @@ function buildEnrichmentPatchFromSession(params: {
   if (!existing.customer_full_name && name) patch.customer_full_name = name;
   if (!existing.customer_first_name && first) patch.customer_first_name = first;
   if (!existing.customer_last_name && last) patch.customer_last_name = last;
-  if (!existing.customer_email && email) patch.customer_email = email;
+  if (!existing.customer_email && emailFromForm)
+    patch.customer_email = emailFromForm;
   if (!existing.customer_phone && phone) patch.customer_phone = phone;
 
   if (!existing.billing_name && name) patch.billing_name = name;
