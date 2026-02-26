@@ -123,10 +123,26 @@ function splitName(full: string | null): {
 
 function sanitizePatch(patch: Record<string, unknown>) {
   const out: Record<string, unknown> = {};
+
   for (const [k, v] of Object.entries(patch)) {
+    // hard-block legacy/non-existent columns (defensive)
+    if (
+      k === "paid_at" ||
+      k === "payment_failed_at" ||
+      k === "stripe_checkout_session_id" ||
+      k === "stripe_payment_intent_id" ||
+      k === "stripe_customer_id" ||
+      k === "stripe_event_id_last" ||
+      k === "failure_message"
+    ) {
+      continue;
+    }
+
     if (!ORDER_UPDATE_ALLOWLIST.has(k)) continue;
     out[k] = v;
   }
+
+  // always touch updated_at
   out.updated_at = nowIso();
   return out;
 }
@@ -436,10 +452,13 @@ async function handlePaidOrder(params: {
   // 3) enrichment patch (customer + billing + amounts)
   const enrichPatch = buildEnrichmentPatchFromSession({ existing, session });
 
+  const finalPatch = { ...basePatch, ...enrichPatch };
+  console.log("[stripe webhook] orders.update keys", Object.keys(finalPatch));
+
   const updated = await updateOrderByTokenOrId({
     orderToken,
     orderId: orderIdFromMeta,
-    patch: { ...basePatch, ...enrichPatch },
+    patch: finalPatch,
   });
 
   console.log("[stripe webhook] order updated", {
