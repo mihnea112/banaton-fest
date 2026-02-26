@@ -364,9 +364,8 @@ export async function POST(req: NextRequest) {
       .update({
         payment_provider: "stripe",
         payment_status: "pending",
-        stripe_checkout_session_id: session.id,
-        // payment intent may be null at create time sometimes
-        stripe_payment_intent_id:
+        payment_reference: session.id,
+        payment_provider_intent_id:
           typeof session.payment_intent === "string"
             ? session.payment_intent
             : (session.payment_intent?.id ?? null),

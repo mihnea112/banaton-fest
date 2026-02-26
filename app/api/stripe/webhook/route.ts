@@ -42,8 +42,6 @@ const ORDER_UPDATE_ALLOWLIST = new Set([
   "payment_reference",
   "currency",
   "subtotal_ron",
-  "discount_ron",
-  "fees_ron",
   "total_ron",
   "notes",
   "customer_first_name",
@@ -332,12 +330,8 @@ function buildEnrichmentPatchFromSession(params: {
   const subtotalRon = centsToRon((session as any).amount_subtotal);
   const totalRon = centsToRon((session as any).amount_total);
 
-  // Stripe are și total_details cu discount/tax/shipping, dar tu ai discount_ron/fees_ron
-  // Poți ajusta după cum calculezi tu; aici le pun safe 0 dacă nu există.
-  const discountRon = centsToRon(
-    (session as any).total_details?.amount_discount,
-  );
-  const feesRon = 0;
+  // NOTE: your current orders table does not include discount_ron / fees_ron
+  // Keep only subtotal_ron and total_ron.
 
   const currency = upperCurrency((session as any).currency) ?? "RON";
 
@@ -403,9 +397,6 @@ function buildEnrichmentPatchFromSession(params: {
 
   if (!existing.subtotal_ron && subtotalRon > 0)
     patch.subtotal_ron = subtotalRon;
-  if (!existing.discount_ron && discountRon > 0)
-    patch.discount_ron = discountRon;
-  if (!existing.fees_ron && feesRon > 0) patch.fees_ron = feesRon;
   if (!existing.total_ron && totalRon > 0) patch.total_ron = totalRon;
 
   return patch;
