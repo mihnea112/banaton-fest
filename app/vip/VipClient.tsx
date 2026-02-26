@@ -48,6 +48,19 @@ type VipAllocationPayload = {
   }>;
 };
 
+type VipAvailabilityResponse = {
+  ok?: boolean;
+  days?: string[];
+  tables?: Array<{
+    id?: string;
+    label?: string; // "Masa 12"
+    capacity?: number; // 6
+    remainingMin?: number; // min remaining across requested days
+    remainingByDay?: Record<string, number>;
+  }>;
+  error?: { message?: string };
+};
+
 function safeNumber(v: unknown) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -66,7 +79,9 @@ function normalizeDayCodeLower(
 export default function VipClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const orderToken = searchParams?.get("order") ?? null;
+
+  // ✅ TS-safe (useSearchParams can be null-ish in some typing contexts)
+  const orderToken = searchParams ? searchParams.get("order") : null;
 
   const [activeZone, setActiveZone] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
@@ -78,7 +93,68 @@ export default function VipClient() {
   const [isSavingAllocation, setIsSavingAllocation] = useState(false);
   const [allocationError, setAllocationError] = useState<string | null>(null);
 
+  // ✅ NEW: availability state (tableLabel -> remaining seats)
+  const [availabilityByTableLabel, setAvailabilityByTableLabel] = useState<
+    Record<string, number>
+  >({});
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+
   const TABLE_CAPACITY = 6;
+
+  const vipSelectedDayCodes = useMemo(() => {
+    const set = new Set<"fri" | "sat" | "sun" | "mon">();
+
+    for (const item of orderData?.items || []) {
+      if (item.category !== "vip") continue;
+      for (const d of item.selectedDayCodes || []) {
+        const normalized = normalizeDayCodeLower(d);
+        if (normalized) set.add(normalized);
+      }
+    }
+
+    return Array.from(set);
+  }, [orderData]);
+
+  async function refreshAvailability(
+    days: Array<"fri" | "sat" | "sun" | "mon">,
+  ) {
+    if (!days.length) {
+      setAvailabilityByTableLabel({});
+      return;
+    }
+
+    setIsLoadingAvailability(true);
+    try {
+      const res = await fetch(
+        `/api/vip/availability?days=${encodeURIComponent(days.join(","))}&includeHolds=true`,
+        { cache: "no-store" },
+      );
+
+      const json = (await res
+        .json()
+        .catch(() => ({}))) as VipAvailabilityResponse;
+
+      if (!res.ok || !json?.ok) {
+        console.warn("[vip-ui] availability failed", {
+          status: res.status,
+          json,
+        });
+        setAvailabilityByTableLabel({});
+        return;
+      }
+
+      const map: Record<string, number> = {};
+      for (const t of json.tables || []) {
+        if (t?.label) map[String(t.label)] = safeNumber(t.remainingMin);
+      }
+      setAvailabilityByTableLabel(map);
+    } catch (e) {
+      console.warn("[vip-ui] availability exception", e);
+      setAvailabilityByTableLabel({});
+    } finally {
+      setIsLoadingAvailability(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -127,7 +203,7 @@ export default function VipClient() {
         // IMPORTANT: keep selectedSeats in sync with vipCount
         setSelectedSeats((prev) => {
           if (vipCount <= 0) return 0;
-          // if user didn't pick, default to full allocation
+          // if user didn't pick, default to full allocation (clamped)
           if (prev <= 0) return Math.min(vipCount, TABLE_CAPACITY);
           // clamp to constraints
           return Math.min(prev, vipCount, TABLE_CAPACITY);
@@ -145,7 +221,7 @@ export default function VipClient() {
       }
     };
 
-    loadOrder();
+    void loadOrder();
 
     return () => {
       cancelled = true;
@@ -157,12 +233,30 @@ export default function VipClient() {
     if (!orderToken) return;
     if (!orderData) return;
 
-    if (!orderToken) return;
-
     if (vipItemsCount <= 0) {
       router.replace(`/checkout?order=${encodeURIComponent(orderToken)}`);
     }
   }, [isLoadingOrder, orderToken, orderData, vipItemsCount, router]);
+
+  // ✅ load availability after order loads (and poll)
+  useEffect(() => {
+    if (!orderToken) return;
+    if (isLoadingOrder) return;
+    if (!orderData) return;
+
+    void refreshAvailability(vipSelectedDayCodes);
+  }, [orderToken, isLoadingOrder, orderData, vipSelectedDayCodes]);
+
+  useEffect(() => {
+    if (!orderToken) return;
+    if (!vipSelectedDayCodes.length) return;
+
+    const id = window.setInterval(() => {
+      void refreshAvailability(vipSelectedDayCodes);
+    }, 15000);
+
+    return () => window.clearInterval(id);
+  }, [orderToken, vipSelectedDayCodes]);
 
   const vipUnitPrice = useMemo(() => {
     const vipItems = (orderData?.items || []).filter(
@@ -190,24 +284,15 @@ export default function VipClient() {
     }, 0);
   }, [orderData]);
 
-  const vipSelectedDayCodes = useMemo(() => {
-    const set = new Set<"fri" | "sat" | "sun" | "mon">();
-
-    for (const item of orderData?.items || []) {
-      if (item.category !== "vip") continue;
-      for (const d of item.selectedDayCodes || []) {
-        const normalized = normalizeDayCodeLower(d);
-        if (normalized) set.add(normalized);
-      }
-    }
-
-    return Array.from(set);
-  }, [orderData]);
-
   const vipTablesSelectedCount = selectedTable ? 1 : 0;
   const vipTablesRequired = 1;
   const requiredVipSeats = Math.max(0, vipItemsCount);
-  const availableSeatsForSelectedTable = selectedTable ? TABLE_CAPACITY : 0;
+
+  // ✅ REAL seats for selected table (min remaining over VIP days)
+  const availableSeatsForSelectedTable = selectedTable
+    ? (availabilityByTableLabel[selectedTable] ?? TABLE_CAPACITY)
+    : 0;
+
   const remainingVipSeats = Math.max(0, requiredVipSeats - selectedSeats);
 
   const canContinue =
@@ -299,6 +384,9 @@ export default function VipClient() {
         );
       }
 
+      // ✅ refresh availability after booking
+      await refreshAvailability(vipSelectedDayCodes);
+
       router.push(`/checkout?order=${encodeURIComponent(orderToken)}`);
     } catch (error) {
       console.error("[vip-ui] handleContinue error", error);
@@ -321,7 +409,6 @@ export default function VipClient() {
     setSelectedTable(tableId);
 
     // IMPORTANT: for your current logic, seats must equal requiredVipSeats
-    // Otherwise canContinue will never be true.
     setSelectedSeats(Math.min(requiredVipSeats || 1, TABLE_CAPACITY));
 
     setActiveZone(null);
@@ -348,6 +435,7 @@ export default function VipClient() {
             <button
               onClick={onClose}
               className="text-indigo-300 hover:text-white transition-colors"
+              type="button"
             >
               <span className="material-symbols-outlined">close</span>
             </button>
@@ -359,7 +447,9 @@ export default function VipClient() {
                 const tableId = `Masa ${num}`;
                 const isSelected = selectedTable === tableId;
 
-                const emptySeats = TABLE_CAPACITY;
+                // ✅ REAL availability: remaining seats for requested VIP days
+                const emptySeats =
+                  availabilityByTableLabel[tableId] ?? TABLE_CAPACITY;
                 const canFitWholeOrder = (vipItemsCount || 0) <= emptySeats;
 
                 return (
@@ -377,6 +467,7 @@ export default function VipClient() {
                           ? "bg-accent-cyan/10 border-accent-cyan text-white shadow-[0_0_15px_rgba(0,229,255,0.25)]"
                           : "bg-[#241242] border-[#4C2A85] text-white hover:border-accent-gold hover:bg-[#2D1B4E]",
                     )}
+                    type="button"
                   >
                     <span
                       className={cn(
@@ -410,6 +501,9 @@ export default function VipClient() {
           <div className="p-4 border-t border-[#4C2A85] bg-[#1A0B2E] text-center">
             <p className="text-xs text-indigo-300">
               Toate mesele au capacitate de 6 persoane.
+              {isLoadingAvailability
+                ? " (se actualizează disponibilitatea...)"
+                : ""}
             </p>
           </div>
         </div>
@@ -724,6 +818,12 @@ export default function VipClient() {
                       </span>{" "}
                       locuri VIP.
                     </p>
+                    <p className="text-xs text-indigo-300 mt-1">
+                      Locuri libere acum:{" "}
+                      <span className="font-bold text-white">
+                        {availableSeatsForSelectedTable}
+                      </span>
+                    </p>
                   </div>
                 </div>
 
@@ -888,6 +988,12 @@ export default function VipClient() {
                           {selectedSeats}
                         </span>{" "}
                         / {requiredVipSeats}
+                      </p>
+                      <p className="text-indigo-200 text-xs mt-1">
+                        Locuri libere acum:{" "}
+                        <span className="font-bold text-white">
+                          {availableSeatsForSelectedTable}
+                        </span>
                       </p>
                     </div>
                   </div>

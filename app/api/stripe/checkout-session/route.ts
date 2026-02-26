@@ -23,6 +23,30 @@ function getSupabaseAdmin() {
   });
 }
 
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function buildFullName(firstName: string | null, lastName: string | null) {
+  return [firstName, lastName].filter(Boolean).join(" ") || null;
+}
+
+function splitCityCounty(input: string | null): {
+  city: string | null;
+  county: string | null;
+} {
+  if (!input) return { city: null, county: null };
+  const parts = input
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return { city: null, county: null };
+  if (parts.length === 1) return { city: parts[0], county: null };
+  return { city: parts[0], county: parts.slice(1).join(", ") };
+}
+
 function toNumber(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
@@ -189,6 +213,28 @@ export async function POST(req: NextRequest) {
       unknown
     >;
 
+    // Optional customer/billing data coming from Checkout form (Option A)
+    const customerObj =
+      body.customer && typeof body.customer === "object"
+        ? (body.customer as Record<string, unknown>)
+        : null;
+    const billingObj =
+      body.billing && typeof body.billing === "object"
+        ? (body.billing as Record<string, unknown>)
+        : null;
+
+    const customerFirstName = asString(customerObj?.firstName ?? body.customer_first_name);
+    const customerLastName = asString(customerObj?.lastName ?? body.customer_last_name);
+    const customerEmail = asString(customerObj?.email ?? body.customer_email);
+    const customerPhone = asString(customerObj?.phone ?? body.customer_phone);
+
+    const billingAddress = asString(billingObj?.address ?? body.billing_address);
+    const cityCountyRaw = asString(billingObj?.cityCounty ?? body.billing_city_county);
+    const { city: billingCity, county: billingCounty } = splitCityCounty(cityCountyRaw);
+
+    const customerFullName = buildFullName(customerFirstName, customerLastName);
+    const billingName = customerFullName;
+
     const orderToken =
       (typeof body.orderToken === "string" && body.orderToken) ||
       (typeof body.token === "string" && body.token) ||
@@ -280,6 +326,16 @@ export async function POST(req: NextRequest) {
 
     if (typeof order.id === "string" && order.id) metadata.order_id = order.id;
 
+    // Mirror checkout form data into Stripe metadata so webhook can always recover it.
+    if (customerEmail) metadata.customer_email = customerEmail;
+    if (customerFirstName) metadata.customer_first_name = customerFirstName;
+    if (customerLastName) metadata.customer_last_name = customerLastName;
+    if (customerFullName) metadata.customer_full_name = customerFullName;
+    if (customerPhone) metadata.customer_phone = customerPhone;
+    if (billingCity) metadata.billing_city = billingCity;
+    if (billingCounty) metadata.billing_county = billingCounty;
+    if (billingAddress) metadata.billing_address = billingAddress;
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       success_url: successUrl,
@@ -312,6 +368,18 @@ export async function POST(req: NextRequest) {
           typeof session.payment_intent === "string"
             ? session.payment_intent
             : (session.payment_intent?.id ?? null),
+
+        // Option A: persist checkout form fields now (webhook can also overwrite/confirm later)
+        customer_first_name: customerFirstName,
+        customer_last_name: customerLastName,
+        customer_full_name: customerFullName,
+        customer_email: customerEmail,
+        customer_phone: customerPhone,
+        billing_name: billingName,
+        billing_city: billingCity,
+        billing_county: billingCounty,
+        billing_address: billingAddress,
+
         updated_at: new Date().toISOString(),
       })
       .eq("public_token", orderToken);

@@ -35,6 +35,8 @@ interface DraftOrder {
   currency?: string;
   publicToken?: string;
   status?: string | null;
+  paymentStatus?: string | null;
+
   customerFirstName?: string;
   customerLastName?: string;
   customerEmail?: string;
@@ -42,6 +44,7 @@ interface DraftOrder {
   billingCity?: string;
   billingCounty?: string;
   billingAddress?: string;
+
   items: DraftOrderItem[];
   rawCart?: Record<string, number>;
 
@@ -56,11 +59,12 @@ interface DraftOrder {
 type VipAllocationDraft = {
   tableId?: string;
   tableLabel?: string;
-  dayCodes?: string[];
+  dayCodes?: string[]; // ["FRI","SAT",...]
   seats?: number;
 };
 
 const PUBLIC_TOKEN_STORAGE_KEY = "banatonFestPublicToken";
+// (optional fallback only)
 const VIP_ALLOCATIONS_STORAGE_KEY = "banatonFestVipAllocations";
 
 function formatLei(value: number) {
@@ -115,21 +119,27 @@ function normalizeVipAllocations(input: unknown): VipAllocationDraft[] {
     if (!row || typeof row !== "object") continue;
     const r = row as Record<string, unknown>;
 
-    const seats = toNumber(r.seats);
+    const seats = toNumber(r.seats ?? r.qty ?? r.quantity);
     const tableLabel =
       typeof r.tableLabel === "string" && r.tableLabel.trim()
         ? r.tableLabel.trim()
-        : typeof r.table_id === "string"
-          ? r.table_id
-          : typeof r.tableId === "string"
-            ? r.tableId
-            : undefined;
+        : typeof r.table_label === "string" && r.table_label.trim()
+          ? r.table_label.trim()
+          : typeof r.table_id === "string"
+            ? r.table_id
+            : typeof r.tableId === "string"
+              ? r.tableId
+              : typeof r.table === "string"
+                ? r.table
+                : undefined;
 
     const dayCodesRaw = Array.isArray(r.dayCodes)
       ? r.dayCodes
-      : Array.isArray(r.days)
-        ? r.days
-        : [];
+      : Array.isArray(r.day_codes)
+        ? r.day_codes
+        : Array.isArray(r.days)
+          ? r.days
+          : [];
 
     const dayCodes = Array.from(
       new Set(
@@ -354,6 +364,13 @@ function extractOrderFromApi(payload: unknown): DraftOrder | null {
       (typeof candidate.public_token === "string" && candidate.public_token) ||
       undefined,
     status: typeof candidate.status === "string" ? candidate.status : null,
+    paymentStatus:
+      (typeof (candidate as any).paymentStatus === "string" &&
+        (candidate as any).paymentStatus) ||
+      (typeof (candidate as any).payment_status === "string" &&
+        (candidate as any).payment_status) ||
+      null,
+
     customerFirstName:
       (typeof candidate.customerFirstName === "string" &&
         candidate.customerFirstName) ||
@@ -394,6 +411,7 @@ function extractOrderFromApi(payload: unknown): DraftOrder | null {
       (typeof candidate.billing_address === "string" &&
         candidate.billing_address) ||
       undefined,
+
     items: normalizedItems,
     vipTableSelection,
   };
@@ -407,29 +425,116 @@ async function fetchOrderByToken(
     {
       method: "GET",
       cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
+      headers: { Accept: "application/json" },
     },
   );
 
-  if (!res.ok) {
-    throw new Error(`Order fetch failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Order fetch failed: ${res.status}`);
 
   const payload = (await res.json()) as unknown;
   return extractOrderFromApi(payload);
 }
 
+/**
+ * ✅ Source of truth for VIP allocation: API (not sessionStorage)
+ *
+ * This tries, in order:
+ * 1) GET /api/order/{token} and looks for allocations-like fields
+ * 2) GET /api/order/{token}/vip-allocation (if you have it)
+ * 3) (optional fallback) sessionStorage if nothing else works
+ */
+async function fetchVipAllocationsFromApi(
+  orderToken: string,
+): Promise<VipAllocationDraft[]> {
+  // 1) /api/order/{token}
+  try {
+    const res = await fetch(`/api/order/${encodeURIComponent(orderToken)}`, {
+      method: "GET",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+
+    const json = (await res.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    if (res.ok) {
+      const candidate =
+        (json.data as Record<string, unknown> | undefined) ??
+        (json.order as Record<string, unknown> | undefined) ??
+        json;
+
+      const raw =
+        (candidate as any).vipAllocations ??
+        (candidate as any).vip_allocations ??
+        (candidate as any).allocations ??
+        (candidate as any).vip_table_allocations ??
+        (candidate as any).vip_table_reservations ??
+        null;
+
+      const normalized = normalizeVipAllocations(raw);
+      if (normalized.length) return normalized;
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) /api/order/{token}/vip-allocation
+  try {
+    const res = await fetch(
+      `/api/order/${encodeURIComponent(orderToken)}/vip-allocation`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      },
+    );
+    const json = (await res.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    if (res.ok) {
+      const raw =
+        (json as any).allocations ??
+        (json as any).data?.allocations ??
+        (json as any).vipAllocations ??
+        (json as any).vip_allocations ??
+        null;
+
+      const normalized = normalizeVipAllocations(raw);
+      if (normalized.length) return normalized;
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3) optional fallback (keeps old behavior if you don't yet have a GET endpoint)
+  try {
+    const rawVipAlloc = window.sessionStorage.getItem(
+      VIP_ALLOCATIONS_STORAGE_KEY,
+    );
+    if (rawVipAlloc) {
+      const parsed = JSON.parse(rawVipAlloc);
+      return normalizeVipAllocations(parsed);
+    }
+  } catch {
+    // ignore
+  }
+
+  return [];
+}
+
 export default function CheckoutClient() {
   const searchParams = useSearchParams();
-
   const queryToken = searchParams?.get("order") ?? null;
 
   const [orderDraft, setOrderDraft] = useState<DraftOrder | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // legacy single table (old UI)
   const [selectedVipTable, setSelectedVipTable] = useState<string | null>(null);
+
+  // ✅ now filled from API, not from sessionStorage
   const [vipAllocations, setVipAllocations] = useState<VipAllocationDraft[]>(
     [],
   );
@@ -441,10 +546,13 @@ export default function CheckoutClient() {
   const [billingFirstName, setBillingFirstName] = useState("");
   const [billingLastName, setBillingLastName] = useState("");
   const [billingEmail, setBillingEmail] = useState("");
-  const [billingPhone, setBillingPhone] = useState("");
-  const [billingCityCounty, setBillingCityCounty] = useState("");
-  const [billingAddress, setBillingAddress] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  // ✅ payment status UX
+  const isPaid = (orderDraft?.status || "").toLowerCase() === "paid";
+  const isPending =
+    (orderDraft?.status || "").toLowerCase().includes("pending") ||
+    (orderDraft?.paymentStatus || "").toLowerCase() === "pending";
 
   useEffect(() => {
     let cancelled = false;
@@ -477,9 +585,7 @@ export default function CheckoutClient() {
           }
         }
 
-        if (!cancelled) {
-          setPublicOrderToken(resolvedToken || null);
-        }
+        if (!cancelled) setPublicOrderToken(resolvedToken || null);
 
         if (!resolvedToken) {
           if (!cancelled) {
@@ -490,7 +596,12 @@ export default function CheckoutClient() {
           return;
         }
 
+        // 1) order (source of truth)
         const apiOrder = await fetchOrderByToken(resolvedToken);
+
+        // 2) vip allocations (source of truth)
+        const apiVipAllocations =
+          await fetchVipAllocationsFromApi(resolvedToken);
 
         if (!cancelled) {
           setOrderDraft(apiOrder);
@@ -501,43 +612,16 @@ export default function CheckoutClient() {
               null,
           );
 
-          if (apiOrder?.publicToken) {
-            setPublicOrderToken(apiOrder.publicToken);
-          }
+          setVipAllocations(apiVipAllocations);
 
+          if (apiOrder?.publicToken) setPublicOrderToken(apiOrder.publicToken);
+
+          // Option A: hydrate only email if backend provides it
           if (apiOrder) {
             setBillingFirstName(apiOrder.customerFirstName ?? "");
             setBillingLastName(apiOrder.customerLastName ?? "");
             setBillingEmail(apiOrder.customerEmail ?? "");
-            setBillingPhone(apiOrder.customerPhone ?? "");
-            setBillingAddress(apiOrder.billingAddress ?? "");
-
-            const cityCounty = [apiOrder.billingCity, apiOrder.billingCounty]
-              .filter((v): v is string => !!v && v.trim().length > 0)
-              .join(", ");
-            setBillingCityCounty(cityCounty);
           }
-        }
-
-        try {
-          const rawVipAlloc = window.sessionStorage.getItem(
-            VIP_ALLOCATIONS_STORAGE_KEY,
-          );
-
-          if (!cancelled) {
-            if (rawVipAlloc) {
-              try {
-                const parsedVipAlloc = JSON.parse(rawVipAlloc);
-                setVipAllocations(normalizeVipAllocations(parsedVipAlloc));
-              } catch {
-                setVipAllocations([]);
-              }
-            } else {
-              setVipAllocations([]);
-            }
-          }
-        } catch {
-          if (!cancelled) setVipAllocations([]);
         }
       } catch (err) {
         console.error("[checkout] Failed to load checkout data:", err);
@@ -560,6 +644,35 @@ export default function CheckoutClient() {
       cancelled = true;
     };
   }, [queryToken]);
+
+  // ✅ Poll until Stripe webhook confirms (status becomes "paid")
+  useEffect(() => {
+    if (!publicOrderToken) return;
+    if (!orderDraft) return;
+
+    const status = String(orderDraft.status || "").toLowerCase();
+    if (status === "paid") return;
+
+    // only poll when it makes sense
+    if (!status || status.includes("draft") || status.includes("created"))
+      return;
+
+    let stop = false;
+    const id = window.setInterval(async () => {
+      if (stop) return;
+      try {
+        const next = await fetchOrderByToken(publicOrderToken);
+        if (next) setOrderDraft(next);
+      } catch {
+        // ignore
+      }
+    }, 3000);
+
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
+  }, [publicOrderToken, orderDraft]);
 
   const subtotal = useMemo(() => {
     if (!orderDraft) return 0;
@@ -597,12 +710,9 @@ export default function CheckoutClient() {
       const days = parseCanonicalDaySet(
         item.canonical_day_set ?? item.durationLabel ?? "",
       );
-
       if (days.length === 0) continue;
 
-      for (const d of days) {
-        map.set(d, (map.get(d) || 0) + qty);
-      }
+      for (const d of days) map.set(d, (map.get(d) || 0) + qty);
     }
 
     return map;
@@ -626,6 +736,8 @@ export default function CheckoutClient() {
 
   const hasVipItems = vipItemsCount > 0;
   const requiresVipTable = hasVipItems;
+
+  // Legacy compatibility if API doesn't return allocations but returns selection
   const hasLegacyVipSelection = !!selectedVipTable;
   const hasNewVipAllocations = vipAllocations.length > 0;
 
@@ -638,9 +750,9 @@ export default function CheckoutClient() {
         0,
       );
 
-      if (requiredVipSeatsByDay.size === 0) {
+      // if frontend can't validate per day, validate total count
+      if (requiredVipSeatsByDay.size === 0)
         return totalAllocated === vipItemsCount;
-      }
 
       const allDays = new Set<string>([
         ...requiredVipSeatsByDay.keys(),
@@ -680,26 +792,16 @@ export default function CheckoutClient() {
       billingFirstName.trim().length > 0 &&
       billingLastName.trim().length > 0 &&
       billingEmail.trim().length > 0 &&
-      billingPhone.trim().length > 0 &&
-      billingCityCounty.trim().length > 0 &&
-      billingAddress.trim().length > 0 &&
       acceptedTerms
     );
-  }, [
-    billingFirstName,
-    billingLastName,
-    billingEmail,
-    billingPhone,
-    billingCityCounty,
-    billingAddress,
-    acceptedTerms,
-  ]);
+  }, [billingFirstName, billingLastName, billingEmail, acceptedTerms]);
 
   const canProceedToPayment =
     !!orderDraft &&
     orderDraft.items.length > 0 &&
     isVipAllocationComplete &&
-    isBillingFormComplete;
+    isBillingFormComplete &&
+    !isPaid;
 
   const vipSelectionHref = publicOrderToken
     ? `/vip?order=${encodeURIComponent(publicOrderToken)}`
@@ -770,15 +872,15 @@ export default function CheckoutClient() {
           orderToken: publicOrderToken,
           token: publicOrderToken,
           publicToken: publicOrderToken,
+          // Option A: name + surname + email
+          email: billingEmail.trim(),
+          customer_email: billingEmail.trim(),
+          customer_first_name: billingFirstName.trim(),
+          customer_last_name: billingLastName.trim(),
           customer: {
             firstName: billingFirstName.trim(),
             lastName: billingLastName.trim(),
             email: billingEmail.trim(),
-            phone: billingPhone.trim(),
-          },
-          billing: {
-            cityCounty: billingCityCounty.trim(),
-            address: billingAddress.trim(),
           },
         }),
       });
@@ -828,6 +930,7 @@ export default function CheckoutClient() {
     }
   }
 
+  // UI below is unchanged stylistically; only behavior changed above.
   return (
     <div className="bg-[#1A0B2E] text-slate-100 font-display min-h-screen flex flex-col antialiased selection:bg-[#00E5FF] selection:text-[#1A0B2E]">
       <main className="flex-grow w-full max-w-7xl mx-auto px-4 lg:px-10 py-8 lg:py-12 relative z-10">
@@ -847,35 +950,41 @@ export default function CheckoutClient() {
               </p>
             </div>
 
+            {isPaid && (
+              <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-emerald-100">
+                Plata este confirmată. Poți merge la pagina de bilete /
+                confirmare.
+                <div className="mt-3">
+                  <Link
+                    href={`/success?order=${encodeURIComponent(publicOrderToken || "")}`}
+                    className="text-[#00E5FF] hover:underline"
+                  >
+                    Vezi confirmarea
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {isPending && !isPaid && (
+              <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-amber-100">
+                Așteptăm confirmarea plății (Stripe webhook). Status comanda:{" "}
+                <span className="font-semibold">
+                  {orderDraft?.status || "pending"}
+                </span>
+              </div>
+            )}
+
+            {/* Date facturare */}
             <section className="bg-[#2D1B4E]/70 backdrop-blur-md rounded-2xl p-6 border border-[#432C7A] shadow-xl">
               <div className="flex items-center gap-4 mb-6 border-b border-[#432C7A] pb-4">
                 <div className="flex items-center justify-center w-10 h-10 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/30 font-bold text-lg shadow-[0_0_15px_rgba(0,229,255,0.3)]">
                   1
                 </div>
                 <h3 className="text-white text-xl font-bold tracking-tight">
-                  Date de Facturare
+                  Date pentru bilete
                 </h3>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <label className="flex flex-col gap-2 group">
-                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
-                    Nume
-                  </span>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
-                      person
-                    </span>
-                    <input
-                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
-                      placeholder="Popescu"
-                      type="text"
-                      value={billingLastName}
-                      onChange={(e) => setBillingLastName(e.target.value)}
-                    />
-                  </div>
-                </label>
-
                 <label className="flex flex-col gap-2 group">
                   <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
                     Prenume
@@ -890,6 +999,26 @@ export default function CheckoutClient() {
                       type="text"
                       value={billingFirstName}
                       onChange={(e) => setBillingFirstName(e.target.value)}
+                      disabled={isPaid}
+                    />
+                  </div>
+                </label>
+
+                <label className="flex flex-col gap-2 group">
+                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
+                    Nume
+                  </span>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
+                      person
+                    </span>
+                    <input
+                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
+                      placeholder="Popescu"
+                      type="text"
+                      value={billingLastName}
+                      onChange={(e) => setBillingLastName(e.target.value)}
+                      disabled={isPaid}
                     />
                   </div>
                 </label>
@@ -908,6 +1037,7 @@ export default function CheckoutClient() {
                       type="email"
                       value={billingEmail}
                       onChange={(e) => setBillingEmail(e.target.value)}
+                      disabled={isPaid}
                     />
                   </div>
                   <p className="text-xs text-[#B39DDB] mt-0.5 flex items-center gap-1">
@@ -917,63 +1047,10 @@ export default function CheckoutClient() {
                     Biletele vor fi trimise la această adresă.
                   </p>
                 </label>
-
-                <label className="flex flex-col gap-2 group">
-                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
-                    Telefon
-                  </span>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
-                      call
-                    </span>
-                    <input
-                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
-                      placeholder="07xx xxx xxx"
-                      type="tel"
-                      value={billingPhone}
-                      onChange={(e) => setBillingPhone(e.target.value)}
-                    />
-                  </div>
-                </label>
-
-                <label className="flex flex-col gap-2 group">
-                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
-                    Oraș / Județ
-                  </span>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
-                      location_on
-                    </span>
-                    <input
-                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
-                      placeholder="Timișoara, Timiș"
-                      type="text"
-                      value={billingCityCounty}
-                      onChange={(e) => setBillingCityCounty(e.target.value)}
-                    />
-                  </div>
-                </label>
-
-                <label className="flex flex-col gap-2 md:col-span-2 group">
-                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
-                    Adresă de Facturare
-                  </span>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
-                      home
-                    </span>
-                    <input
-                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
-                      placeholder="Strada Victoriei, Nr. 12, Bl. A4, Ap. 20"
-                      type="text"
-                      value={billingAddress}
-                      onChange={(e) => setBillingAddress(e.target.value)}
-                    />
-                  </div>
-                </label>
               </div>
             </section>
 
+            {/* Metodă de plată */}
             <section className="bg-[#2D1B4E]/70 backdrop-blur-md rounded-2xl p-6 border border-[#432C7A] shadow-xl">
               <div className="flex items-center gap-4 mb-6 border-b border-[#432C7A] pb-4">
                 <div className="flex items-center justify-center w-10 h-10 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/30 font-bold text-lg shadow-[0_0_15px_rgba(0,229,255,0.3)]">
@@ -1019,6 +1096,7 @@ export default function CheckoutClient() {
                   type="checkbox"
                   checked={acceptedTerms}
                   onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  disabled={isPaid}
                 />
                 <span className="text-[#B39DDB] text-sm leading-normal select-none group-hover:text-white transition-colors">
                   Sunt de acord cu{" "}
@@ -1041,6 +1119,7 @@ export default function CheckoutClient() {
             </section>
           </div>
 
+          {/* Sidebar */}
           <div className="lg:col-span-5 xl:col-span-4 relative">
             <div className="sticky top-28 flex flex-col gap-6">
               <div className="rounded-2xl bg-[#2D1B4E] border border-[#432C7A] overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
@@ -1145,16 +1224,6 @@ export default function CheckoutClient() {
                                       : ""}
                                     {safeQty} x {formatLei(fallbackUnitPrice)}
                                   </span>
-                                  <button
-                                    type="button"
-                                    className="text-[#B39DDB]/40 cursor-not-allowed p-1 rounded"
-                                    title="Ștergerea din checkout va fi activată ulterior"
-                                    disabled
-                                  >
-                                    <span className="material-symbols-outlined text-[18px]">
-                                      delete
-                                    </span>
-                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -1237,17 +1306,6 @@ export default function CheckoutClient() {
                     )}
                   </div>
 
-                  <div className="flex gap-2">
-                    <input
-                      className="flex-1 h-10 px-3 rounded-lg bg-[#1A0B2E] border border-[#432C7A] text-white text-sm placeholder:text-[#B39DDB]/50 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all"
-                      placeholder="Cod de reducere"
-                      type="text"
-                    />
-                    <button className="h-10 px-4 rounded-lg bg-[#24123E] border border-[#432C7A] hover:bg-[#00E5FF]/20 hover:border-[#00E5FF]/50 text-white text-sm font-medium transition-all">
-                      Aplică
-                    </button>
-                  </div>
-
                   <div className="h-px bg-gradient-to-r from-transparent via-[#432C7A] to-transparent w-full"></div>
 
                   <div className="flex flex-col gap-2">
@@ -1298,11 +1356,12 @@ export default function CheckoutClient() {
 
                   {!canProceedToPayment &&
                     !!orderDraft &&
-                    orderDraft.items.length > 0 && (
+                    orderDraft.items.length > 0 &&
+                    !isPaid && (
                       <div className="rounded-xl border border-[#432C7A] bg-[#24123E]/70 p-3 text-sm text-[#D1C4E9]">
                         {!acceptedTerms
                           ? "Acceptă termenii și condițiile pentru a continua plata."
-                          : "Completează datele de facturare pentru a continua plata."}
+                          : "Completează numele, prenumele și emailul pentru a continua plata."}
                       </div>
                     )}
 
@@ -1312,7 +1371,17 @@ export default function CheckoutClient() {
                     </div>
                   )}
 
-                  {canProceedToPayment ? (
+                  {isPaid ? (
+                    <Link
+                      href={`/success?order=${encodeURIComponent(publicOrderToken || "")}`}
+                      className="w-full h-14 rounded-xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-2 transform group bg-emerald-400/20 text-emerald-100 border border-emerald-400/30"
+                    >
+                      <span className="material-symbols-outlined font-bold">
+                        verified
+                      </span>
+                      Plata confirmată — Vezi biletele
+                    </Link>
+                  ) : canProceedToPayment ? (
                     <button
                       type="button"
                       onClick={handleStartCheckout}
@@ -1330,7 +1399,13 @@ export default function CheckoutClient() {
                     </button>
                   ) : (
                     <Link
-                      href={hasVipItems ? vipSelectionHref : "/tickets"}
+                      href={
+                        !isBillingFormComplete
+                          ? "/checkout"
+                          : hasVipItems
+                            ? vipSelectionHref
+                            : "/tickets"
+                      }
                       className="w-full h-14 rounded-xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-2 transform group bg-[#24123E] text-[#B39DDB] border border-[#432C7A]"
                     >
                       <span className="material-symbols-outlined font-bold group-hover:rotate-12 transition-transform">
@@ -1341,7 +1416,7 @@ export default function CheckoutClient() {
                             : "arrow_back"}
                       </span>
                       {!isBillingFormComplete
-                        ? "Completează datele"
+                        ? "Completează emailul"
                         : hasVipItems
                           ? "Alege masa VIP"
                           : "Mergi la bilete"}
@@ -1352,21 +1427,6 @@ export default function CheckoutClient() {
                     Vei fi redirecționat către pagina securizată Stripe pentru a
                     finaliza plata.
                   </p>
-
-                  <div className="flex justify-center gap-4 opacity-60 grayscale hover:grayscale-0 transition-all duration-500 mt-2">
-                    <div className="h-6 w-10 bg-white/10 rounded flex items-center justify-center text-xs text-white font-bold font-sans">
-                      VISA
-                    </div>
-                    <div className="h-6 w-10 bg-white/10 rounded flex items-center justify-center text-xs text-white font-bold font-sans">
-                      MC
-                    </div>
-                    <div className="flex items-center gap-1 text-[10px] text-[#B39DDB]">
-                      <span className="material-symbols-outlined text-sm text-green-400">
-                        verified_user
-                      </span>
-                      <span>Securizat SSL</span>
-                    </div>
-                  </div>
                 </div>
               </div>
 
@@ -1393,6 +1453,7 @@ export default function CheckoutClient() {
               </div>
             </div>
           </div>
+          {/* /Sidebar */}
         </div>
       </main>
     </div>
