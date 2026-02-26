@@ -79,8 +79,6 @@ type OrderRow = {
 
   currency?: string | null;
   subtotal_ron?: number | null;
-  discount_ron?: number | null;
-  fees_ron?: number | null;
   total_ron?: number | null;
 
   payment_provider?: string | null;
@@ -202,8 +200,6 @@ async function loadOrderByTokenOrId(params: {
       billing_country,
       currency,
       subtotal_ron,
-      discount_ron,
-      fees_ron,
       total_ron,
       payment_provider,
       payment_provider_intent_id,

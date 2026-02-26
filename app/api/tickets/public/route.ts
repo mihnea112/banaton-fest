@@ -58,12 +58,24 @@ export async function GET(req: Request) {
     if (tErr) throw tErr;
 
     // 3) optional: load order items for labels (nice UI)
-    const { data: items, error: iErr } = await supabase
+    const { data: itemsRaw, error: iErr } = await supabase
       .from("order_items")
       .select(
-        "id, category, name, label, product_name_snapshot, qty, unit_price_ron, total_ron, canonical_day_set, variant_label, duration_label",
+        "id, category, quantity, unit_price_ron, line_total_ron, product_name_snapshot, variant_label_snapshot, duration_type, canonical_day_set",
       )
       .eq("order_id", order.id);
+
+    const items = (itemsRaw || []).map((it: any) => ({
+      id: it.id,
+      category: it.category ?? null,
+      qty: it.quantity ?? null,
+      unit_price_ron: it.unit_price_ron ?? 0,
+      line_total_ron: it.line_total_ron ?? 0,
+      product_name_snapshot: it.product_name_snapshot ?? null,
+      variant_label_snapshot: it.variant_label_snapshot ?? null,
+      duration_type: it.duration_type ?? null,
+      canonical_day_set: it.canonical_day_set ?? null,
+    }));
 
     if (iErr) {
       // don't fail UI if this table differs; just omit labels
@@ -99,7 +111,7 @@ export async function GET(req: Request) {
         customer_email: order.customer_email ?? null,
       },
       tickets: tickets ?? [],
-      items: items ?? [],
+      items: items,
     });
   } catch (e) {
     console.error("[GET /api/tickets/public] error", e);

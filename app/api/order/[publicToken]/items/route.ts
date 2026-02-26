@@ -736,26 +736,37 @@ export async function PUT(
       }
     }
 
-    // 7) Actualizăm totalul în orders (cu fallback dacă coloanele lipsesc)
+    // 7) Actualizăm totalul în orders (aliniat la schema ta: subtotal_ron / total_ron)
     const totalAmount = normalizedLines.reduce((s, x) => s + x.lineTotal, 0);
     const totalItems = normalizedLines.reduce((s, x) => s + x.qty, 0);
 
+    // Schema ta curentă (din log-uri) NU are: total_amount / total / total_items.
+    // Are: subtotal_ron, total_ron (și, opțional, discount_ron / fees_ron în alte versiuni).
+    // Aici actualizăm strict ce există acum.
     const updateCandidates: Record<string, unknown>[] = [
-      { total_amount: totalAmount, total_items: totalItems },
-      { total_amount: totalAmount },
-      { total: totalAmount, total_items: totalItems },
-      { total: totalAmount },
+      { subtotal_ron: totalAmount, total_ron: totalAmount },
+      { total_ron: totalAmount },
+      { subtotal_ron: totalAmount },
     ];
 
+    let totalsUpdated = false;
+
     for (const patch of updateCandidates) {
-      const updRes = await supabaseAdmin
-        .from("orders")
-        .update(patch)
-        .eq("id", orderId);
-      if (!updRes.error) break;
+      const updRes = await supabaseAdmin.from("orders").update(patch).eq("id", orderId);
+      if (!updRes.error) {
+        totalsUpdated = true;
+        break;
+      }
       console.warn("[order-items] orders total update warning", {
         patch,
         error: updRes.error,
+      });
+    }
+
+    if (!totalsUpdated) {
+      console.warn("[order-items] orders totals were NOT updated (schema mismatch)", {
+        orderId,
+        totalAmount,
       });
     }
 
