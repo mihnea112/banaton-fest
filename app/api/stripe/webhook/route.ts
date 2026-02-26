@@ -34,20 +34,34 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-type OrderStatusPatch = {
-  status?: string;
-  payment_status?: string;
-  paid_at?: string | null;
-  payment_failed_at?: string | null;
-  stripe_checkout_session_id?: string | null;
-  stripe_payment_intent_id?: string | null;
-  stripe_customer_id?: string | null;
-  stripe_event_id_last?: string | null;
-  payment_provider?: string | null;
-  payment_method_type?: string | null;
-  failure_reason?: string | null;
-  updated_at?: string;
-};
+type OrderStatusPatch = Partial<{
+  // columns that exist in your current `orders` table (based on your logged keys)
+  status: string;
+  payment_status: string;
+  payment_provider: string | null;
+  payment_provider_intent_id: string | null;
+  payment_reference: string | null;
+  updated_at: string;
+}>;
+
+const ORDER_PATCH_ALLOWLIST = new Set<keyof OrderStatusPatch>([
+  "status",
+  "payment_status",
+  "payment_provider",
+  "payment_provider_intent_id",
+  "payment_reference",
+  "updated_at",
+]);
+
+function sanitizeOrderPatch(patch: Record<string, unknown>): OrderStatusPatch {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (ORDER_PATCH_ALLOWLIST.has(k as keyof OrderStatusPatch)) {
+      out[k] = v;
+    }
+  }
+  return out as OrderStatusPatch;
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -96,14 +110,16 @@ function getOrderIdFromSession(
 async function updateOrderByTokenOrId(params: {
   orderToken?: string | null;
   orderId?: string | null;
-  patch: OrderStatusPatch;
+  patch: Record<string, unknown>;
 }) {
   const { orderToken, orderId, patch } = params;
 
-  let query = supabase.from("orders").update({
+  const safePatch = sanitizeOrderPatch({
     ...patch,
     updated_at: nowIso(),
   });
+
+  let query = supabase.from("orders").update(safePatch);
 
   if (orderId) query = query.eq("id", orderId);
   else if (orderToken) query = query.eq("public_token", orderToken);
@@ -278,15 +294,10 @@ async function handlePaidOrder(params: {
     orderId: orderIdFromMeta,
     patch: {
       payment_provider: "stripe",
-      stripe_event_id_last: event.id,
-      stripe_checkout_session_id: session.id,
-      stripe_payment_intent_id: paymentIntentId,
-      stripe_customer_id: customerId,
-      payment_method_type: paymentMethodType,
+      payment_provider_intent_id: paymentIntentId,
+      payment_reference: session.id,
       status: isPaid ? "paid" : "payment_pending",
       payment_status: isPaid ? "paid" : "pending",
-      paid_at: isPaid ? nowIso() : null,
-      failure_reason: null,
     },
   });
 
@@ -337,14 +348,10 @@ async function handleAsyncPaymentFailed(event: Stripe.Event) {
     orderId,
     patch: {
       payment_provider: "stripe",
-      stripe_event_id_last: event.id,
-      stripe_checkout_session_id: session.id,
-      stripe_payment_intent_id: paymentIntentId,
-      stripe_customer_id: customerId,
+      payment_provider_intent_id: paymentIntentId,
+      payment_reference: session.id,
       status: "payment_failed",
       payment_status: "failed",
-      payment_failed_at: nowIso(),
-      failure_reason: "async_payment_failed",
     },
   });
 
@@ -387,16 +394,9 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event) {
     orderId,
     patch: {
       payment_provider: "stripe",
-      stripe_event_id_last: event.id,
-      stripe_payment_intent_id: pi.id,
-      stripe_customer_id:
-        typeof pi.customer === "string"
-          ? pi.customer
-          : (pi.customer?.id ?? null),
+      payment_provider_intent_id: pi.id,
       status: "paid",
       payment_status: "paid",
-      paid_at: nowIso(),
-      failure_reason: null,
     },
   });
 
