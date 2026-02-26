@@ -338,6 +338,7 @@ export async function POST(req: NextRequest) {
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      client_reference_id: orderToken,
       success_url: successUrl,
       cancel_url: cancelUrl,
       line_items: lineItems,
@@ -346,6 +347,7 @@ export async function POST(req: NextRequest) {
       metadata,
       payment_intent_data: { metadata },
       customer_creation: "if_required",
+      customer_email: customerEmail ?? undefined,
     });
 
     if (!session.url) {
@@ -357,19 +359,19 @@ export async function POST(req: NextRequest) {
 
     // ✅ Persist mapping in DB immediately
     const supabase = getSupabaseAdmin();
-    await supabase
+    const { error: updErr } = await supabase
       .from("orders")
       .update({
         payment_provider: "stripe",
         payment_status: "pending",
         stripe_checkout_session_id: session.id,
-        // payment intent may be null at create time sometimes, keep optional
+        // payment intent may be null at create time sometimes
         stripe_payment_intent_id:
           typeof session.payment_intent === "string"
             ? session.payment_intent
             : (session.payment_intent?.id ?? null),
 
-        // Option A: persist checkout form fields now (webhook can also overwrite/confirm later)
+        // Option A: persist checkout form fields now (webhook can confirm later)
         customer_first_name: customerFirstName,
         customer_last_name: customerLastName,
         customer_full_name: customerFullName,
@@ -383,6 +385,11 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq("public_token", orderToken);
+
+    if (updErr) {
+      console.error("[checkout-session] failed to persist order pre-payment data", updErr);
+      // Don’t block checkout creation, but you want to know about it.
+    }
 
     return NextResponse.json({
       ok: true,

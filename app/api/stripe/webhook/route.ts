@@ -245,29 +245,72 @@ function buildEnrichmentPatchFromSession(params: {
 }) {
   const { existing, session } = params;
 
-  const details = session.customer_details ?? null;
-  const name = asString(details?.name) ?? null;
-
-  // IMPORTANT: We never trust Stripe-collected email.
-  // Only accept the email that your app sent from the checkout form via metadata.
+  // ✅ Source of truth = your checkout form -> Stripe metadata
+  // We will NEVER persist Stripe-collected email/name/phone.
   const md = (session.metadata || {}) as Record<string, unknown>;
+
+  const firstFromForm =
+    asString(md.customer_first_name) || asString(md.customerFirstName) || null;
+
+  const lastFromForm =
+    asString(md.customer_last_name) || asString(md.customerLastName) || null;
+
+  const fullFromForm =
+    asString(md.customer_full_name) ||
+    asString(md.customerFullName) ||
+    (firstFromForm || lastFromForm
+      ? [firstFromForm, lastFromForm].filter(Boolean).join(" ")
+      : null);
+
+  // STRICT: email is ONLY taken from your form metadata
   const emailFromForm =
-    asString(md.customer_email) ||
-    asString(md.customerEmail) ||
-    asString(md.email) ||
+    asString(md.customer_email) || asString(md.customerEmail) || null;
+
+  // STRICT: phone is ONLY taken from your form metadata
+  const phoneFromForm =
+    asString(md.customer_phone) || asString(md.customerPhone) || null;
+
+  // Billing fields – prefer metadata from your form; only fall back to Stripe customer_details.address
+  const billingNameFromForm =
+    asString(md.billing_name) || asString(md.billingName) || fullFromForm;
+
+  const billingCountryFromForm =
+    asString(md.billing_country) || asString(md.billingCountry) || null;
+
+  const billingAddressFromForm =
+    asString(md.billing_address) || asString(md.billingAddress) || null;
+
+  // City/County can come as a single field "City, County" from your form
+  const cityCountyFromForm =
+    asString(md.billing_city_county) ||
+    asString(md.billingCityCounty) ||
+    asString(md.cityCounty) ||
     null;
 
-  const phone = asString(details?.phone) ?? null;
+  const billingCityFromForm =
+    asString(md.billing_city) || asString(md.billingCity) || null;
 
+  const billingCountyFromForm =
+    asString(md.billing_county) || asString(md.billingCounty) || null;
+
+  let cityFromForm = billingCityFromForm;
+  let countyFromForm = billingCountyFromForm;
+
+  if ((!cityFromForm || !countyFromForm) && cityCountyFromForm) {
+    const parts = cityCountyFromForm.split(",").map((p) => p.trim()).filter(Boolean);
+    if (!cityFromForm && parts[0]) cityFromForm = parts[0];
+    if (!countyFromForm && parts[1]) countyFromForm = parts[1];
+  }
+
+  const details = session.customer_details ?? null;
   const addr = details?.address ?? null;
-  const city = asString(addr?.city) ?? null;
-  const state = asString((addr as any)?.state) ?? null; // RO: județ poate veni aici uneori
-  const country = asString(addr?.country) ?? null;
+
+  const cityFromStripe = asString(addr?.city) ?? null;
+  const stateFromStripe = asString((addr as any)?.state) ?? null; // RO: județ poate veni aici uneori
+  const countryFromStripe = asString(addr?.country) ?? null;
   const line1 = asString(addr?.line1) ?? null;
   const line2 = asString(addr?.line2) ?? null;
-  const billingAddress = [line1, line2].filter(Boolean).join(", ") || null;
-
-  const { first, last } = splitName(name);
+  const billingAddressFromStripe = [line1, line2].filter(Boolean).join(", ") || null;
 
   // amounts in cents -> RON
   const subtotalRon = centsToRon((session as any).amount_subtotal);
@@ -282,25 +325,63 @@ function buildEnrichmentPatchFromSession(params: {
 
   const currency = upperCurrency((session as any).currency) ?? "RON";
 
-  // Completează doar dacă e gol în DB
+  // ✅ Customer identity fields: ALWAYS prefer form values.
+  // Email must ALWAYS be the form email when present (even if DB already has a different one).
   const patch: Record<string, unknown> = {};
 
-  if (!existing.customer_full_name && name) patch.customer_full_name = name;
-  if (!existing.customer_first_name && first) patch.customer_first_name = first;
-  if (!existing.customer_last_name && last) patch.customer_last_name = last;
-  if (!existing.customer_email && emailFromForm)
+  // Names
+  if (fullFromForm && existing.customer_full_name !== fullFromForm) {
+    patch.customer_full_name = fullFromForm;
+  }
+  if (firstFromForm && existing.customer_first_name !== firstFromForm) {
+    patch.customer_first_name = firstFromForm;
+  } else if (!existing.customer_first_name && splitName(fullFromForm).first) {
+    // fallback only if form full name exists but first/last not explicitly provided
+    patch.customer_first_name = splitName(fullFromForm).first;
+  }
+
+  if (lastFromForm && existing.customer_last_name !== lastFromForm) {
+    patch.customer_last_name = lastFromForm;
+  } else if (!existing.customer_last_name && splitName(fullFromForm).last) {
+    patch.customer_last_name = splitName(fullFromForm).last;
+  }
+
+  // Email (strict)
+  if (emailFromForm && existing.customer_email !== emailFromForm) {
     patch.customer_email = emailFromForm;
-  if (!existing.customer_phone && phone) patch.customer_phone = phone;
+  }
 
-  if (!existing.billing_name && name) patch.billing_name = name;
-  if (!existing.billing_country && country) patch.billing_country = country;
-  if (!existing.billing_city && city) patch.billing_city = city;
+  // Phone (prefer form; do not use Stripe collected phone)
+  if (phoneFromForm && existing.customer_phone !== phoneFromForm) {
+    patch.customer_phone = phoneFromForm;
+  }
 
-  // billing_county: Stripe “state” poate fi gol pt RO; dacă e gol, las null
-  if (!existing.billing_county && state) patch.billing_county = state;
+  // Billing: ALWAYS prefer values coming from your form metadata.
+  // Fall back to Stripe address ONLY if form metadata is missing.
 
-  if (!existing.billing_address && billingAddress)
-    patch.billing_address = billingAddress;
+  if (!existing.billing_name && billingNameFromForm) {
+    patch.billing_name = billingNameFromForm;
+  }
+
+  const effectiveCountry = billingCountryFromForm || countryFromStripe;
+  if (!existing.billing_country && effectiveCountry) {
+    patch.billing_country = effectiveCountry;
+  }
+
+  const effectiveCity = cityFromForm || cityFromStripe;
+  if (!existing.billing_city && effectiveCity) {
+    patch.billing_city = effectiveCity;
+  }
+
+  const effectiveCounty = countyFromForm || stateFromStripe;
+  if (!existing.billing_county && effectiveCounty) {
+    patch.billing_county = effectiveCounty;
+  }
+
+  const effectiveBillingAddress = billingAddressFromForm || billingAddressFromStripe;
+  if (!existing.billing_address && effectiveBillingAddress) {
+    patch.billing_address = effectiveBillingAddress;
+  }
 
   if (!existing.currency && currency) patch.currency = currency;
 
@@ -332,6 +413,14 @@ async function handlePaidOrder(params: {
   const existing = await loadOrderByTokenOrId({
     orderToken,
     orderId: orderIdFromMeta,
+  });
+
+  console.log("[stripe webhook] metadata debug", {
+    eventId: event.id,
+    sessionId: session.id,
+    orderToken,
+    orderIdFromMeta,
+    hasCustomerEmailInMetadata: !!(session.metadata && ((session.metadata as any).customer_email || (session.metadata as any).customerEmail)),
   });
 
   // 2) base payment patch (coloane existente la tine)
