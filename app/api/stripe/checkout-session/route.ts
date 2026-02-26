@@ -2,6 +2,7 @@
 import Stripe from "stripe";
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
@@ -9,93 +10,26 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-01-28.clover",
 });
 
-type PublicOrderItem = {
-  id?: string;
-  qty?: number;
-  quantity?: number;
-  count?: number;
-  seats?: number;
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  category?: string;
-  ticket_category?: string;
-  access_type?: string;
+  if (!url || !key) {
+    throw new Error("Missing Supabase env vars for service role client.");
+  }
 
-  name?: string;
-  label?: string;
-  title?: string;
-  ticket_name?: string;
-  product_name?: string;
-  product_name_snapshot?: string;
-
-  variantLabel?: string | null;
-  variant_label?: string | null;
-
-  durationLabel?: string;
-  duration_label?: string;
-
-  canonical_day_set?: string;
-
-  price?: number | string;
-  unitPrice?: number | string;
-  unit_price?: number | string;
-  price_per_unit?: number | string;
-  amount_per_unit?: number | string;
-  unit_amount?: number | string;
-
-  totalPrice?: number | string;
-  lineTotal?: number | string;
-  line_total?: number | string;
-  total?: number | string;
-  itemTotal?: number | string;
-  total_amount?: number | string;
-  amount_total?: number | string;
-  amount?: number | string;
-
-  pricing?: {
-    price?: number | string;
-    unitPrice?: number | string;
-    unit_price?: number | string;
-    unit_amount?: number | string;
-    totalPrice?: number | string;
-    lineTotal?: number | string;
-    line_total?: number | string;
-    total?: number | string;
-    amount?: number | string;
-  };
-};
-
-type PublicOrder = {
-  id?: string;
-  publicToken?: string;
-  public_token?: string;
-  token?: string;
-  status?: string | null;
-  currency?: string;
-
-  totalAmount?: number | string;
-  total_amount?: number | string;
-  total_ron?: number | string;
-  amount_total?: number | string;
-  amount?: number | string;
-  subtotal?: number | string;
-  subtotal_ron?: number | string;
-  final_total?: number | string;
-  final_price?: number | string;
-  gross_total?: number | string;
-
-  items?: PublicOrderItem[];
-  order_items?: PublicOrderItem[];
-};
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 function toNumber(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-
   if (typeof value === "string") {
     const cleaned = value.replace(",", ".").replace(/[^0-9.-]/g, "");
     const n = Number(cleaned);
     return Number.isFinite(n) ? n : 0;
   }
-
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 }
@@ -106,7 +40,6 @@ function toPositiveInt(value: number, fallback = 1): number {
 }
 
 function toStripeAmount(valueRon: number): number {
-  // Stripe expects the smallest currency unit (bani for RON)
   const amount = Math.round(toNumber(valueRon) * 100);
   return amount > 0 ? amount : 0;
 }
@@ -117,25 +50,18 @@ async function getBaseUrlFromRequest() {
     h.get("x-forwarded-proto") ||
     (process.env.NODE_ENV === "development" ? "http" : "https");
   const host = h.get("x-forwarded-host") || h.get("host");
-
-  if (!host) {
+  if (!host)
     return process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "";
-  }
-
   return `${proto}://${host}`;
 }
 
+type PublicOrderItem = Record<string, any>;
+type PublicOrder = Record<string, any>;
+
 function extractOrderFromApiPayload(payload: unknown): PublicOrder | null {
   if (!payload || typeof payload !== "object") return null;
-
-  const root = payload as Record<string, unknown>;
-  const candidate =
-    (root.order as PublicOrder | undefined) ??
-    (root.data as PublicOrder | undefined) ??
-    (root as PublicOrder);
-
-  if (!candidate || typeof candidate !== "object") return null;
-  return candidate;
+  const root = payload as Record<string, any>;
+  return (root.order ?? root.data ?? root) as PublicOrder;
 }
 
 function getOrderItems(order: PublicOrder): PublicOrderItem[] {
@@ -230,9 +156,7 @@ function buildLineItemsFromOrderItems(
       "Bilet";
 
     const variant = item.variantLabel ?? item.variant_label ?? null;
-
     const duration = item.durationLabel ?? item.duration_label ?? null;
-
     const details = [variant, duration].filter(Boolean).join(" · ");
 
     lineItems.push({
@@ -269,8 +193,7 @@ export async function POST(req: NextRequest) {
       (typeof body.orderToken === "string" && body.orderToken) ||
       (typeof body.token === "string" && body.token) ||
       (typeof body.publicToken === "string" && body.publicToken) ||
-      (typeof req.nextUrl.searchParams.get("token") === "string" &&
-        req.nextUrl.searchParams.get("token")) ||
+      req.nextUrl.searchParams.get("token") ||
       null;
 
     if (!orderToken) {
@@ -283,12 +206,11 @@ export async function POST(req: NextRequest) {
     const baseUrl = await getBaseUrlFromRequest();
     if (!baseUrl) {
       return NextResponse.json(
-        { error: "Nu pot determina URL-ul aplicației (base URL)." },
+        { error: "Nu pot determina base URL." },
         { status: 500 },
       );
     }
 
-    // Refolosim endpointul public existent ca source of truth
     const orderRes = await fetch(
       `${baseUrl}/api/order/public?token=${encodeURIComponent(orderToken)}`,
       {
@@ -307,7 +229,6 @@ export async function POST(req: NextRequest) {
 
     const orderPayload = (await orderRes.json()) as unknown;
     const order = extractOrderFromApiPayload(orderPayload);
-
     if (!order) {
       return NextResponse.json(
         { error: "Răspuns invalid de la /api/order/public." },
@@ -323,48 +244,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const lineItems = buildLineItemsFromOrderItems(items);
+    let lineItems = buildLineItemsFromOrderItems(items);
 
-    // fallback safety: dacă ceva nu are preț pe iteme, pune o singură linie din total
     if (!lineItems.length) {
       const totalRon = getOrderTotal(order);
       const totalBani = toStripeAmount(totalRon);
-
       if (totalBani <= 0) {
         return NextResponse.json(
-          { error: "Comanda nu are un total valid pentru plată." },
+          { error: "Comanda nu are total valid." },
           { status: 400 },
         );
       }
 
-      lineItems.push({
-        quantity: 1,
-        price_data: {
-          currency: "ron",
-          unit_amount: totalBani,
-          product_data: {
-            name: "Banaton Fest 2026 - Comandă bilete",
-            description: `Comandă publică ${orderToken}`,
+      lineItems = [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "ron",
+            unit_amount: totalBani,
+            product_data: {
+              name: "Banaton Fest 2026 - Comandă bilete",
+              description: `Comandă publică ${orderToken}`,
+            },
           },
         },
-      });
+      ];
     }
 
-    // Success/cancel pages (ajustează dacă vrei alte rute)
     const successUrl = `${baseUrl}/success?order=${encodeURIComponent(orderToken)}&session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${baseUrl}/checkout?order=${encodeURIComponent(orderToken)}`;
 
-    // Optional metadata
     const metadata: Record<string, string> = {
       order_token: orderToken,
     };
 
-    const publicTokenFromApi =
-      (typeof order.publicToken === "string" && order.publicToken) ||
-      (typeof order.public_token === "string" && order.public_token) ||
-      null;
-
-    if (publicTokenFromApi) metadata.public_order_token = publicTokenFromApi;
     if (typeof order.id === "string" && order.id) metadata.order_id = order.id;
 
     const session = await stripe.checkout.sessions.create({
@@ -372,24 +285,36 @@ export async function POST(req: NextRequest) {
       success_url: successUrl,
       cancel_url: cancelUrl,
       line_items: lineItems,
-      currency: "ron",
       payment_method_types: ["card"],
       billing_address_collection: "auto",
       metadata,
-      // Dacă vrei să apară și pe PaymentIntent:
-      payment_intent_data: {
-        metadata,
-      },
-      // Poți activa email collection din Stripe hosted checkout
+      payment_intent_data: { metadata },
       customer_creation: "if_required",
     });
 
     if (!session.url) {
       return NextResponse.json(
-        { error: "Stripe nu a returnat URL-ul de checkout." },
+        { error: "Stripe nu a returnat URL-ul." },
         { status: 500 },
       );
     }
+
+    // ✅ Persist mapping in DB immediately
+    const supabase = getSupabaseAdmin();
+    await supabase
+      .from("orders")
+      .update({
+        payment_provider: "stripe",
+        payment_status: "pending",
+        stripe_checkout_session_id: session.id,
+        // payment intent may be null at create time sometimes, keep optional
+        stripe_payment_intent_id:
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : (session.payment_intent?.id ?? null),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("public_token", orderToken);
 
     return NextResponse.json({
       ok: true,
@@ -398,12 +323,12 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("[POST /api/stripe/checkout-session] error:", error);
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Eroare internă la crearea sesiunii Stripe.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Eroare internă Stripe.",
+      },
+      { status: 500 },
+    );
   }
 }
