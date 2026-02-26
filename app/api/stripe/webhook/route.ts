@@ -7,17 +7,15 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const STRIPE_WEBHOOK_SECRET_ENV = process.env.STRIPE_WEBHOOK_SECRET;
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`Missing ${name}`);
-  }
-  return value;
-}
+if (!STRIPE_SECRET_KEY) throw new Error("Missing STRIPE_SECRET_KEY");
+if (!STRIPE_WEBHOOK_SECRET_ENV)
+  throw new Error("Missing STRIPE_WEBHOOK_SECRET");
 
-const STRIPE_SECRET_KEY = requireEnv("STRIPE_SECRET_KEY");
-const STRIPE_WEBHOOK_SECRET = requireEnv("STRIPE_WEBHOOK_SECRET");
+// ✅ make TS happy: after the guard above, this is guaranteed a string
+const STRIPE_WEBHOOK_SECRET: string = STRIPE_WEBHOOK_SECRET_ENV;
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: "2026-01-28.clover",
@@ -59,6 +57,11 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function toInt(value: unknown, fallback = 0) {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function getPaymentIntentId(
   value: string | Stripe.PaymentIntent | null,
 ): string | null {
@@ -72,11 +75,11 @@ function getOrderTokenFromSession(
 ): string | null {
   const md = session.metadata || {};
   return (
-    asString(md.orderToken) ||
-    asString(md.order_token) ||
-    asString(md.token) ||
-    asString(md.publicToken) ||
-    asString(md.public_order_token) ||
+    asString((md as any).orderToken) ||
+    asString((md as any).order_token) ||
+    asString((md as any).token) ||
+    asString((md as any).publicToken) ||
+    asString((md as any).public_order_token) ||
     null
   );
 }
@@ -85,7 +88,9 @@ function getOrderIdFromSession(
   session: Stripe.Checkout.Session,
 ): string | null {
   const md = session.metadata || {};
-  return asString(md.orderId) || asString(md.order_id) || null;
+  return (
+    asString((md as any).orderId) || asString((md as any).order_id) || null
+  );
 }
 
 async function updateOrderByTokenOrId(params: {
@@ -111,10 +116,11 @@ async function updateOrderByTokenOrId(params: {
     .maybeSingle();
 
   if (error) throw error;
-  if (!data)
+  if (!data) {
     throw new Error(
       `Order not found for ${orderId ? `id=${orderId}` : `public_token=${orderToken}`}`,
     );
+  }
 
   return data as {
     id: string;
@@ -127,9 +133,21 @@ async function updateOrderByTokenOrId(params: {
   };
 }
 
-function toInt(value: unknown, fallback = 0) {
-  const n = Math.floor(Number(value));
-  return Number.isFinite(n) ? n : fallback;
+/**
+ * Determine next ticket_number (global increment) so inserts don't fail if ticket_number is NOT NULL.
+ * NOTE: This is "good enough" for low concurrency. Best practice is GENERATED IDENTITY in DB.
+ */
+async function getNextTicketNumberStart(): Promise<number> {
+  const { data, error } = await supabase
+    .from("issued_tickets")
+    .select("ticket_number")
+    .order("ticket_number", { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+
+  const max = data && data[0] ? toInt((data[0] as any).ticket_number, 0) : 0;
+  return max + 1;
 }
 
 /**
@@ -156,12 +174,10 @@ async function issueTicketsIfMissing(params: {
     return;
   }
 
-  // 2) load items
+  // 2) load items (schema-safe)
   const { data: items, error: itemsErr } = await supabase
     .from("order_items")
-    .select(
-      "id, order_id, category, qty, quantity, seats, tickets_count, name, label, product_name_snapshot",
-    )
+    .select("*")
     .eq("order_id", orderId);
 
   if (itemsErr) throw itemsErr;
@@ -172,10 +188,14 @@ async function issueTicketsIfMissing(params: {
     return;
   }
 
-  // 3) build inserts
+  // 3) determine ticket number start
+  let nextTicketNumber = await getNextTicketNumberStart();
+
+  // 4) build inserts
   const rows: Array<{
     order_id: string;
     order_item_id: string;
+    ticket_number: number;
     qr_code_text: string;
     attendee_name: string | null;
     status: string;
@@ -193,12 +213,12 @@ async function issueTicketsIfMissing(params: {
 
     for (let i = 1; i <= qty; i++) {
       // qr_code_text: unic + util la scan
-      // include token, order_item_id, index
       const qr = `banaton:${orderToken}:${it.id}:${i}`;
 
       rows.push({
         order_id: orderId,
         order_item_id: it.id,
+        ticket_number: nextTicketNumber++,
         qr_code_text: qr,
         attendee_name: attendeeName ?? null,
         status: "valid",
@@ -214,7 +234,7 @@ async function issueTicketsIfMissing(params: {
     });
   }
 
-  // 4) insert in batches (safe for serverless)
+  // 5) insert in batches
   const BATCH = 200;
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
@@ -253,7 +273,6 @@ async function handlePaidOrder(params: {
 
   const isPaid = session.payment_status === "paid";
 
-  // 1) update order
   const updated = await updateOrderByTokenOrId({
     orderToken,
     orderId: orderIdFromMeta,
@@ -271,7 +290,6 @@ async function handlePaidOrder(params: {
     },
   });
 
-  // 2) issue tickets only when truly paid
   if (isPaid) {
     const attendeeName =
       updated.customer_full_name ?? updated.billing_name ?? null;
@@ -299,8 +317,6 @@ async function handleCheckoutSessionCompleted(event: Stripe.Event) {
 
 async function handleAsyncPaymentSucceeded(event: Stripe.Event) {
   const session = event.data.object as Stripe.Checkout.Session;
-
-  // async succeeded => treat as paid
   (session as any).payment_status = "paid";
   await handlePaidOrder({ event, session });
 }
@@ -343,15 +359,17 @@ async function handlePaymentIntentSucceeded(event: Stripe.Event) {
   const pi = event.data.object as Stripe.PaymentIntent;
 
   const orderToken =
-    asString(pi.metadata?.orderToken) ||
-    asString(pi.metadata?.order_token) ||
-    asString(pi.metadata?.token) ||
-    asString(pi.metadata?.publicToken) ||
-    asString(pi.metadata?.public_order_token) ||
+    asString((pi.metadata as any)?.orderToken) ||
+    asString((pi.metadata as any)?.order_token) ||
+    asString((pi.metadata as any)?.token) ||
+    asString((pi.metadata as any)?.publicToken) ||
+    asString((pi.metadata as any)?.public_order_token) ||
     null;
 
   const orderId =
-    asString(pi.metadata?.orderId) || asString(pi.metadata?.order_id) || null;
+    asString((pi.metadata as any)?.orderId) ||
+    asString((pi.metadata as any)?.order_id) ||
+    null;
 
   if (!orderToken && !orderId) {
     console.log(
@@ -418,6 +436,15 @@ async function dispatchStripeEvent(event: Stripe.Event) {
   }
 }
 
+function serializeUnknownError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const hdrs = await headers();
@@ -442,14 +469,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ received: true }, { status: 200 });
   } catch (error) {
+    const msg = serializeUnknownError(error);
     console.error("[stripe webhook] error:", error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Webhook processing failed",
-      },
-      { status: 400 },
-    );
+
+    // IMPORTANT: send back the real message so Stripe dashboard shows it
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 }
 
