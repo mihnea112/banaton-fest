@@ -14,7 +14,6 @@ if (!STRIPE_SECRET_KEY) throw new Error("Missing STRIPE_SECRET_KEY");
 if (!STRIPE_WEBHOOK_SECRET_ENV)
   throw new Error("Missing STRIPE_WEBHOOK_SECRET");
 
-// ✅ make TS happy: after the guard above, this is guaranteed a string
 const STRIPE_WEBHOOK_SECRET: string = STRIPE_WEBHOOK_SECRET_ENV;
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, {
@@ -34,34 +33,64 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-type OrderStatusPatch = Partial<{
-  // columns that exist in your current `orders` table (based on your logged keys)
-  status: string;
-  payment_status: string;
-  payment_provider: string | null;
-  payment_provider_intent_id: string | null;
-  payment_reference: string | null;
-  updated_at: string;
-}>;
-
-const ORDER_PATCH_ALLOWLIST = new Set<keyof OrderStatusPatch>([
+// ✅ allowlist cu coloanele PE CARE LE AI (din outputul tău)
+const ORDER_UPDATE_ALLOWLIST = new Set([
   "status",
   "payment_status",
   "payment_provider",
   "payment_provider_intent_id",
   "payment_reference",
+  "currency",
+  "subtotal_ron",
+  "discount_ron",
+  "fees_ron",
+  "total_ron",
+  "notes",
+  "customer_first_name",
+  "customer_last_name",
+  "customer_full_name",
+  "customer_email",
+  "customer_phone",
+  "billing_city",
+  "billing_county",
+  "billing_address",
+  "billing_name",
+  "billing_country",
+  "expires_at",
+  "failure_reason",
   "updated_at",
 ]);
 
-function sanitizeOrderPatch(patch: Record<string, unknown>): OrderStatusPatch {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(patch)) {
-    if (ORDER_PATCH_ALLOWLIST.has(k as keyof OrderStatusPatch)) {
-      out[k] = v;
-    }
-  }
-  return out as OrderStatusPatch;
-}
+type OrderRow = {
+  id: string;
+  public_token: string;
+  status: string | null;
+  payment_status: string | null;
+
+  customer_first_name?: string | null;
+  customer_last_name?: string | null;
+  customer_full_name?: string | null;
+  customer_email?: string | null;
+  customer_phone?: string | null;
+
+  billing_city?: string | null;
+  billing_county?: string | null;
+  billing_address?: string | null;
+  billing_name?: string | null;
+  billing_country?: string | null;
+
+  currency?: string | null;
+  subtotal_ron?: number | null;
+  discount_ron?: number | null;
+  fees_ron?: number | null;
+  total_ron?: number | null;
+
+  payment_provider?: string | null;
+  payment_provider_intent_id?: string | null;
+  payment_reference?: string | null;
+
+  failure_reason?: string | null;
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -71,9 +100,35 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function toInt(value: unknown, fallback = 0) {
-  const n = Math.floor(Number(value));
-  return Number.isFinite(n) ? n : fallback;
+function centsToRon(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round((n / 100) * 100) / 100;
+}
+
+function upperCurrency(v: unknown): string | null {
+  const s = asString(v);
+  return s ? s.toUpperCase() : null;
+}
+
+function splitName(full: string | null): {
+  first: string | null;
+  last: string | null;
+} {
+  if (!full) return { first: null, last: null };
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { first: full.trim(), last: null };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+function sanitizePatch(patch: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (!ORDER_UPDATE_ALLOWLIST.has(k)) continue;
+    out[k] = v;
+  }
+  out.updated_at = nowIso();
+  return out;
 }
 
 function getPaymentIntentId(
@@ -107,30 +162,48 @@ function getOrderIdFromSession(
   );
 }
 
-async function updateOrderByTokenOrId(params: {
+async function loadOrderByTokenOrId(params: {
   orderToken?: string | null;
   orderId?: string | null;
-  patch: Record<string, unknown>;
 }) {
-  const { orderToken, orderId, patch } = params;
+  const { orderToken, orderId } = params;
 
-  const safePatch = sanitizeOrderPatch({
-    ...patch,
-    updated_at: nowIso(),
-  });
+  let q = supabase
+    .from("orders")
+    .select(
+      `
+      id,
+      public_token,
+      status,
+      payment_status,
+      customer_first_name,
+      customer_last_name,
+      customer_full_name,
+      customer_email,
+      customer_phone,
+      billing_city,
+      billing_county,
+      billing_address,
+      billing_name,
+      billing_country,
+      currency,
+      subtotal_ron,
+      discount_ron,
+      fees_ron,
+      total_ron,
+      payment_provider,
+      payment_provider_intent_id,
+      payment_reference,
+      failure_reason
+    `,
+    )
+    .limit(1);
 
-  let query = supabase.from("orders").update(safePatch);
-
-  if (orderId) query = query.eq("id", orderId);
-  else if (orderToken) query = query.eq("public_token", orderToken);
+  if (orderId) q = q.eq("id", orderId);
+  else if (orderToken) q = q.eq("public_token", orderToken);
   else throw new Error("No order identifier found (orderId/orderToken)");
 
-  const { data, error } = await query
-    .select(
-      "id, public_token, status, payment_status, customer_full_name, billing_name, customer_email",
-    )
-    .maybeSingle();
-
+  const { data, error } = await q.maybeSingle();
   if (error) throw error;
   if (!data) {
     throw new Error(
@@ -138,132 +211,97 @@ async function updateOrderByTokenOrId(params: {
     );
   }
 
-  return data as {
-    id: string;
-    public_token: string;
-    status: string | null;
-    payment_status: string | null;
-    customer_full_name?: string | null;
-    billing_name?: string | null;
-    customer_email?: string | null;
-  };
+  return data as OrderRow;
 }
 
-/**
- * Determine next ticket_number (global increment) so inserts don't fail if ticket_number is NOT NULL.
- * NOTE: This is "good enough" for low concurrency. Best practice is GENERATED IDENTITY in DB.
- */
-async function getNextTicketNumberStart(): Promise<number> {
-  const { data, error } = await supabase
-    .from("issued_tickets")
-    .select("ticket_number")
-    .order("ticket_number", { ascending: false })
-    .limit(1);
+async function updateOrderByTokenOrId(params: {
+  orderToken?: string | null;
+  orderId?: string | null;
+  patch: Record<string, unknown>;
+}) {
+  const { orderToken, orderId, patch } = params;
+
+  let q = supabase.from("orders").update(sanitizePatch(patch));
+
+  if (orderId) q = q.eq("id", orderId);
+  else if (orderToken) q = q.eq("public_token", orderToken);
+  else throw new Error("No order identifier found (orderId/orderToken)");
+
+  const { data, error } = await q
+    .select("id, public_token, status, payment_status")
+    .maybeSingle();
 
   if (error) throw error;
-
-  const max = data && data[0] ? toInt((data[0] as any).ticket_number, 0) : 0;
-  return max + 1;
+  if (!data) throw new Error("Order update returned no row");
+  return data as Pick<
+    OrderRow,
+    "id" | "public_token" | "status" | "payment_status"
+  >;
 }
 
-/**
- * EMITERE BILETE (issued_tickets)
- * Idempotent: dacă există deja bilete pentru order_id -> nu mai emite.
- */
-async function issueTicketsIfMissing(params: {
-  orderId: string;
-  orderToken: string;
-  attendeeName?: string | null;
+function buildEnrichmentPatchFromSession(params: {
+  existing: OrderRow;
+  session: Stripe.Checkout.Session;
 }) {
-  const { orderId, orderToken, attendeeName } = params;
+  const { existing, session } = params;
 
-  // 1) check already issued
-  const { data: existing, error: existingErr } = await supabase
-    .from("issued_tickets")
-    .select("id")
-    .eq("order_id", orderId)
-    .limit(1);
+  const details = session.customer_details ?? null;
+  const name = asString(details?.name) ?? null;
+  const email = asString(details?.email) ?? null;
+  const phone = asString(details?.phone) ?? null;
 
-  if (existingErr) throw existingErr;
-  if (existing && existing.length > 0) {
-    console.log("[tickets] already issued for order, skipping", { orderId });
-    return;
-  }
+  const addr = details?.address ?? null;
+  const city = asString(addr?.city) ?? null;
+  const state = asString((addr as any)?.state) ?? null; // RO: județ poate veni aici uneori
+  const country = asString(addr?.country) ?? null;
+  const line1 = asString(addr?.line1) ?? null;
+  const line2 = asString(addr?.line2) ?? null;
+  const billingAddress = [line1, line2].filter(Boolean).join(", ") || null;
 
-  // 2) load items (schema-safe)
-  const { data: items, error: itemsErr } = await supabase
-    .from("order_items")
-    .select("*")
-    .eq("order_id", orderId);
+  const { first, last } = splitName(name);
 
-  if (itemsErr) throw itemsErr;
-  if (!items || items.length === 0) {
-    console.warn("[tickets] no order_items found, cannot issue tickets", {
-      orderId,
-    });
-    return;
-  }
+  // amounts in cents -> RON
+  const subtotalRon = centsToRon((session as any).amount_subtotal);
+  const totalRon = centsToRon((session as any).amount_total);
 
-  // 3) determine ticket number start
-  let nextTicketNumber = await getNextTicketNumberStart();
+  // Stripe are și total_details cu discount/tax/shipping, dar tu ai discount_ron/fees_ron
+  // Poți ajusta după cum calculezi tu; aici le pun safe 0 dacă nu există.
+  const discountRon = centsToRon(
+    (session as any).total_details?.amount_discount,
+  );
+  const feesRon = 0;
 
-  // 4) build inserts
-  const rows: Array<{
-    order_id: string;
-    order_item_id: string;
-    ticket_number: number;
-    qr_code_text: string;
-    attendee_name: string | null;
-    status: string;
-    created_at: string;
-  }> = [];
+  const currency = upperCurrency((session as any).currency) ?? "RON";
 
-  for (const it of items as any[]) {
-    const qty = Math.max(
-      1,
-      toInt(it.qty ?? it.quantity ?? it.seats ?? it.tickets_count ?? 1, 1),
-    );
+  // Completează doar dacă e gol în DB
+  const patch: Record<string, unknown> = {};
 
-    const displayName =
-      it.name ?? it.label ?? it.product_name_snapshot ?? "Bilet";
+  if (!existing.customer_full_name && name) patch.customer_full_name = name;
+  if (!existing.customer_first_name && first) patch.customer_first_name = first;
+  if (!existing.customer_last_name && last) patch.customer_last_name = last;
+  if (!existing.customer_email && email) patch.customer_email = email;
+  if (!existing.customer_phone && phone) patch.customer_phone = phone;
 
-    for (let i = 1; i <= qty; i++) {
-      // qr_code_text: unic + util la scan
-      const qr = `banaton:${orderToken}:${it.id}:${i}`;
+  if (!existing.billing_name && name) patch.billing_name = name;
+  if (!existing.billing_country && country) patch.billing_country = country;
+  if (!existing.billing_city && city) patch.billing_city = city;
 
-      rows.push({
-        order_id: orderId,
-        order_item_id: it.id,
-        ticket_number: nextTicketNumber++,
-        qr_code_text: qr,
-        attendee_name: attendeeName ?? null,
-        status: "valid",
-        created_at: nowIso(),
-      });
-    }
+  // billing_county: Stripe “state” poate fi gol pt RO; dacă e gol, las null
+  if (!existing.billing_county && state) patch.billing_county = state;
 
-    console.log("[tickets] prepared tickets", {
-      orderId,
-      orderItemId: it.id,
-      displayName,
-      qty,
-    });
-  }
+  if (!existing.billing_address && billingAddress)
+    patch.billing_address = billingAddress;
 
-  // 5) insert in batches
-  const BATCH = 200;
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const slice = rows.slice(i, i + BATCH);
-    const { error: insErr } = await supabase
-      .from("issued_tickets")
-      .insert(slice);
-    if (insErr) throw insErr;
-  }
+  if (!existing.currency && currency) patch.currency = currency;
 
-  console.log("[tickets] issued tickets inserted", {
-    orderId,
-    count: rows.length,
-  });
+  if (!existing.subtotal_ron && subtotalRon > 0)
+    patch.subtotal_ron = subtotalRon;
+  if (!existing.discount_ron && discountRon > 0)
+    patch.discount_ron = discountRon;
+  if (!existing.fees_ron && feesRon > 0) patch.fees_ron = feesRon;
+  if (!existing.total_ron && totalRon > 0) patch.total_ron = totalRon;
+
+  return patch;
 }
 
 async function handlePaidOrder(params: {
@@ -276,48 +314,43 @@ async function handlePaidOrder(params: {
   const orderIdFromMeta = getOrderIdFromSession(session);
 
   const paymentIntentId = getPaymentIntentId(session.payment_intent);
-  const customerId =
-    typeof session.customer === "string"
-      ? session.customer
-      : (session.customer?.id ?? null);
-
-  const paymentMethodType =
-    Array.isArray(session.payment_method_types) &&
-    session.payment_method_types.length > 0
-      ? session.payment_method_types[0]
-      : null;
+  const checkoutSessionId = session.id;
 
   const isPaid = session.payment_status === "paid";
+
+  // 1) load existing row (ca să completăm doar dacă e gol)
+  const existing = await loadOrderByTokenOrId({
+    orderToken,
+    orderId: orderIdFromMeta,
+  });
+
+  // 2) base payment patch (coloane existente la tine)
+  const basePatch: Record<string, unknown> = {
+    payment_provider: "stripe",
+    payment_provider_intent_id: paymentIntentId,
+    payment_reference: checkoutSessionId,
+    status: isPaid ? "paid" : "payment_pending",
+    payment_status: isPaid ? "paid" : "pending",
+    failure_reason: null,
+  };
+
+  // 3) enrichment patch (customer + billing + amounts)
+  const enrichPatch = buildEnrichmentPatchFromSession({ existing, session });
 
   const updated = await updateOrderByTokenOrId({
     orderToken,
     orderId: orderIdFromMeta,
-    patch: {
-      payment_provider: "stripe",
-      payment_provider_intent_id: paymentIntentId,
-      payment_reference: session.id,
-      status: isPaid ? "paid" : "payment_pending",
-      payment_status: isPaid ? "paid" : "pending",
-    },
+    patch: { ...basePatch, ...enrichPatch },
   });
 
-  if (isPaid) {
-    const attendeeName =
-      updated.customer_full_name ?? updated.billing_name ?? null;
-    await issueTicketsIfMissing({
-      orderId: updated.id,
-      orderToken: updated.public_token,
-      attendeeName,
-    });
-  }
-
-  console.log("[stripe webhook] order processed", {
+  console.log("[stripe webhook] order updated", {
     eventId: event.id,
     sessionId: session.id,
     paymentStatus: session.payment_status,
     orderToken,
     orderIdFromMeta,
     updated,
+    enrichPatchKeys: Object.keys(enrichPatch),
   });
 }
 
@@ -337,13 +370,10 @@ async function handleAsyncPaymentFailed(event: Stripe.Event) {
 
   const orderToken = getOrderTokenFromSession(session);
   const orderId = getOrderIdFromSession(session);
-  const paymentIntentId = getPaymentIntentId(session.payment_intent);
-  const customerId =
-    typeof session.customer === "string"
-      ? session.customer
-      : (session.customer?.id ?? null);
 
-  const updated = await updateOrderByTokenOrId({
+  const paymentIntentId = getPaymentIntentId(session.payment_intent);
+
+  await updateOrderByTokenOrId({
     orderToken,
     orderId,
     patch: {
@@ -352,68 +382,25 @@ async function handleAsyncPaymentFailed(event: Stripe.Event) {
       payment_reference: session.id,
       status: "payment_failed",
       payment_status: "failed",
+      failure_reason: "async_payment_failed",
     },
   });
 
   console.log("[stripe webhook] async_payment_failed -> order updated", {
     eventId: event.id,
     sessionId: session.id,
-    updated,
+    orderToken,
+    orderId,
   });
 }
 
 async function handlePaymentIntentSucceeded(event: Stripe.Event) {
+  // optional fallback; poți lăsa doar log
   const pi = event.data.object as Stripe.PaymentIntent;
-
-  const orderToken =
-    asString((pi.metadata as any)?.orderToken) ||
-    asString((pi.metadata as any)?.order_token) ||
-    asString((pi.metadata as any)?.token) ||
-    asString((pi.metadata as any)?.publicToken) ||
-    asString((pi.metadata as any)?.public_order_token) ||
-    null;
-
-  const orderId =
-    asString((pi.metadata as any)?.orderId) ||
-    asString((pi.metadata as any)?.order_id) ||
-    null;
-
-  if (!orderToken && !orderId) {
-    console.log(
-      "[stripe webhook] payment_intent.succeeded without order metadata (ignored)",
-      {
-        eventId: event.id,
-        paymentIntentId: pi.id,
-      },
-    );
-    return;
-  }
-
-  const updated = await updateOrderByTokenOrId({
-    orderToken,
-    orderId,
-    patch: {
-      payment_provider: "stripe",
-      payment_provider_intent_id: pi.id,
-      status: "paid",
-      payment_status: "paid",
-    },
+  console.log("[stripe webhook] payment_intent.succeeded", {
+    eventId: event.id,
+    paymentIntentId: pi.id,
   });
-
-  await issueTicketsIfMissing({
-    orderId: updated.id,
-    orderToken: updated.public_token,
-    attendeeName: updated.customer_full_name ?? updated.billing_name ?? null,
-  });
-
-  console.log(
-    "[stripe webhook] payment_intent.succeeded -> order updated + tickets issued",
-    {
-      eventId: event.id,
-      paymentIntentId: pi.id,
-      updated,
-    },
-  );
 }
 
 async function dispatchStripeEvent(event: Stripe.Event) {
@@ -471,8 +458,6 @@ export async function POST(req: Request) {
   } catch (error) {
     const msg = serializeUnknownError(error);
     console.error("[stripe webhook] error:", error);
-
-    // IMPORTANT: send back the real message so Stripe dashboard shows it
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 }
