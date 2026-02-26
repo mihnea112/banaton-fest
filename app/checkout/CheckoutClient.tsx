@@ -546,7 +546,6 @@ export default function CheckoutClient() {
   const [billingFirstName, setBillingFirstName] = useState("");
   const [billingLastName, setBillingLastName] = useState("");
   const [billingEmail, setBillingEmail] = useState("");
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // ✅ payment status UX
   const isPaid = (orderDraft?.status || "").toLowerCase() === "paid";
@@ -779,9 +778,7 @@ export default function CheckoutClient() {
     allocatedVipSeatsByDay,
   ]);
 
-  const processingFee = 0;
-  const total = subtotal + processingFee;
-  const safeDisplayTotal = Number.isFinite(total) ? total : 0;
+  const safeDisplayTotal = Number.isFinite(subtotal) ? subtotal : 0;
 
   const payLabel = orderDraft
     ? `Plătește ${formatLei(safeDisplayTotal)}`
@@ -791,10 +788,9 @@ export default function CheckoutClient() {
     return (
       billingFirstName.trim().length > 0 &&
       billingLastName.trim().length > 0 &&
-      billingEmail.trim().length > 0 &&
-      acceptedTerms
+      billingEmail.trim().length > 0
     );
-  }, [billingFirstName, billingLastName, billingEmail, acceptedTerms]);
+  }, [billingFirstName, billingLastName, billingEmail]);
 
   const canProceedToPayment =
     !!orderDraft &&
@@ -939,14 +935,31 @@ export default function CheckoutClient() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 xl:gap-16">
           <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-8">
-            <div className="flex flex-col gap-2 mb-2">
+            <div className="flex flex-col gap-3 mb-2">
+              {/* Progress bar (3 pași) */}
+              <div className="flex flex-col gap-3 mb-2">
+                <div className="flex gap-6 justify-between items-end">
+                  <p className="text-white text-base font-medium leading-normal">
+                    Progres Rezervare
+                  </p>
+                  <p className="text-[#00E5FF]/80 text-sm font-normal leading-normal">
+                    Pasul 3 din 3
+                  </p>
+                </div>
+                <div className="h-2 w-full rounded-full bg-[#341C61]">
+                  <div
+                    className="h-2 rounded-full bg-gradient-to-r from-[#FFD700] to-[#00E5FF] shadow-[0_0_10px_rgba(0,229,255,0.35)]"
+                    style={{ width: "100%" }}
+                  ></div>
+                </div>
+              </div>
+
               <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight flex items-center gap-3">
                 <span className="w-1.5 h-8 bg-gradient-to-b from-[#00E5FF] to-[#7C4DFF] rounded-full block"></span>
                 Finalizare Comandă
               </h1>
               <p className="text-[#B39DDB] text-base font-normal pl-5">
-                Completează detaliile pentru a primi biletele Banaton Fest 2026
-                pe email.
+                Completează detaliile pentru a primi biletele Banaton Fest 2026 pe email.
               </p>
             </div>
 
@@ -1050,73 +1063,6 @@ export default function CheckoutClient() {
               </div>
             </section>
 
-            {/* Metodă de plată */}
-            <section className="bg-[#2D1B4E]/70 backdrop-blur-md rounded-2xl p-6 border border-[#432C7A] shadow-xl">
-              <div className="flex items-center gap-4 mb-6 border-b border-[#432C7A] pb-4">
-                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/30 font-bold text-lg shadow-[0_0_15px_rgba(0,229,255,0.3)]">
-                  2
-                </div>
-                <h3 className="text-white text-xl font-bold tracking-tight">
-                  Metodă de Plată
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                <label className="cursor-pointer group relative">
-                  <input
-                    defaultChecked
-                    className="peer sr-only"
-                    name="payment_method"
-                    type="radio"
-                  />
-                  <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-[#24123E] border border-[#432C7A] hover:border-[#00E5FF]/50 hover:bg-[#24123E]/80 peer-checked:border-[#00E5FF] peer-checked:bg-[#00E5FF]/10 peer-checked:shadow-[0_0_15px_rgba(0,229,255,0.15)] transition-all relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-br from-[#00E5FF]/5 to-transparent opacity-0 peer-checked:opacity-100 transition-opacity"></div>
-                    <span className="material-symbols-outlined text-4xl mb-3 text-white group-hover:text-[#00E5FF] transition-colors relative z-10">
-                      credit_card
-                    </span>
-                    <span className="text-white font-medium text-lg relative z-10">
-                      Plată cu Cardul Online
-                    </span>
-                    <span className="text-[#B39DDB] text-sm mt-1 relative z-10 text-center max-w-sm">
-                      Vei fi redirecționat către pagina securizată Stripe pentru
-                      a finaliza plata. Acceptăm Visa și Mastercard.
-                    </span>
-                  </div>
-                  <div className="absolute top-4 right-4 opacity-0 peer-checked:opacity-100 text-[#00E5FF] transition-opacity z-20">
-                    <span className="material-symbols-outlined filled text-2xl drop-shadow-[0_0_8px_rgba(0,229,255,0.5)]">
-                      check_circle
-                    </span>
-                  </div>
-                </label>
-              </div>
-
-              <label className="flex items-start gap-3 mt-6 cursor-pointer group">
-                <input
-                  className="mt-1 w-5 h-5 rounded border-[#432C7A] bg-[#24123E] text-[#00E5FF] focus:ring-[#00E5FF] focus:ring-offset-[#1A0B2E]"
-                  type="checkbox"
-                  checked={acceptedTerms}
-                  onChange={(e) => setAcceptedTerms(e.target.checked)}
-                  disabled={isPaid}
-                />
-                <span className="text-[#B39DDB] text-sm leading-normal select-none group-hover:text-white transition-colors">
-                  Sunt de acord cu{" "}
-                  <a
-                    className="text-[#00E5FF] hover:underline hover:text-[#00E5FF]/80 transition-colors"
-                    href="#"
-                  >
-                    Termenii și Condițiile
-                  </a>{" "}
-                  și{" "}
-                  <a
-                    className="text-[#00E5FF] hover:underline hover:text-[#00E5FF]/80 transition-colors"
-                    href="#"
-                  >
-                    Politica de Confidențialitate
-                  </a>{" "}
-                  Banaton Fest.
-                </span>
-              </label>
-            </section>
           </div>
 
           {/* Sidebar */}
@@ -1315,16 +1261,6 @@ export default function CheckoutClient() {
                         {formatLei(subtotal)}
                       </span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#B39DDB]">Taxe procesare</span>
-                      <span className="text-white font-medium">
-                        {formatLei(processingFee)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#B39DDB]">TVA (19%)</span>
-                      <span className="text-white font-medium">Inclus</span>
-                    </div>
                   </div>
 
                   <div className="flex justify-between items-end border-t border-dashed border-[#432C7A] pt-4 mt-2">
@@ -1359,9 +1295,7 @@ export default function CheckoutClient() {
                     orderDraft.items.length > 0 &&
                     !isPaid && (
                       <div className="rounded-xl border border-[#432C7A] bg-[#24123E]/70 p-3 text-sm text-[#D1C4E9]">
-                        {!acceptedTerms
-                          ? "Acceptă termenii și condițiile pentru a continua plata."
-                          : "Completează numele, prenumele și emailul pentru a continua plata."}
+                        {"Completează numele, prenumele și emailul pentru a continua plata."}
                       </div>
                     )}
 
@@ -1441,13 +1375,14 @@ export default function CheckoutClient() {
                     Ai nevoie de ajutor?
                   </span>
                   <span className="text-[#B39DDB] text-xs">
-                    Contactează-ne la{" "}
+                    Pentru orice întrebare sau problemă legată de comandă, scrie-ne la{" "}
                     <a
                       className="text-[#00E5FF] hover:text-white hover:underline transition-colors"
-                      href="#"
+                      href="mailto:office.banaton@gmail.com"
                     >
-                      suport@banaton.ro
+                      office.banaton@gmail.com
                     </a>
+                    .
                   </span>
                 </div>
               </div>

@@ -581,11 +581,47 @@ export async function GET(req: NextRequest) {
     );
 
     const response = {
+      ok: true,
       order: {
         id: orderAny.id,
         publicToken: orderAny.public_token,
+        public_token: orderAny.public_token,
+
         status: orderAny.status ?? null,
+        payment_status: orderAny.payment_status ?? null,
+        payment_provider: orderAny.payment_provider ?? null,
+        payment_reference: orderAny.payment_reference ?? null,
+        payment_provider_intent_id: orderAny.payment_provider_intent_id ?? null,
         currency: orderAny.currency ?? "RON",
+
+        // Customer / billing fields (prefer your snake_case columns)
+        customer_first_name: orderAny.customer_first_name ?? null,
+        customer_last_name: orderAny.customer_last_name ?? null,
+        customer_full_name: orderAny.customer_full_name ?? null,
+        customer_email: orderAny.customer_email ?? null,
+        customer_phone: orderAny.customer_phone ?? null,
+
+        billing_name: orderAny.billing_name ?? null,
+        billing_city: orderAny.billing_city ?? null,
+        billing_county: orderAny.billing_county ?? null,
+        billing_address: orderAny.billing_address ?? null,
+        billing_country: orderAny.billing_country ?? null,
+
+        // Totals breakdown (your schema uses *_ron)
+        subtotal_ron:
+          orderLevelSubtotal > 0
+            ? Math.round(orderLevelSubtotal * 100) / 100
+            : 0,
+        discount_ron:
+          orderLevelDiscount > 0
+            ? Math.round(orderLevelDiscount * 100) / 100
+            : 0,
+        fees_ron:
+          orderLevelFees > 0 ? Math.round(orderLevelFees * 100) / 100 : 0,
+        total_ron:
+          orderLevelDisplayAmount > 0
+            ? Math.round(orderLevelDisplayAmount * 100) / 100
+            : 0,
 
         hasVip:
           typeof orderAny.has_vip === "boolean"
@@ -605,9 +641,13 @@ export async function GET(req: NextRequest) {
               ? Math.round(orderLevelDisplayAmount * 100) / 100
               : orderLevelSubtotal,
 
+        // Checkout expects items here (and some clients also accept root-level items)
         items: normalizedItems,
         vipTableSelection: vipTableSelection ?? undefined,
       },
+
+      // Extra compatibility for clients that read items at top level
+      items: normalizedItems,
     };
 
     return NextResponse.json(response, {

@@ -527,6 +527,26 @@ export default function Tickets() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-brand-surface/30 blur-[120px] rounded-full pointer-events-none -z-10"></div>
         <div className="absolute top-[20%] right-[-10%] w-[400px] h-[400px] bg-accent-cyan/5 blur-[100px] rounded-full pointer-events-none -z-10"></div>
 
+        {/* Progress (3 steps) */}
+        <div className="max-w-[1440px] mx-auto w-full mb-6">
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-6 justify-between items-end">
+              <p className="text-white text-base font-medium leading-normal">
+                Progres Rezervare
+              </p>
+              <p className="text-accent-cyan/80 text-sm font-normal leading-normal">
+                Pasul 1 din 3
+              </p>
+            </div>
+            <div className="h-2 w-full rounded-full bg-white/10">
+              <div
+                className="h-2 rounded-full bg-gradient-to-r from-accent-gold to-accent-cyan shadow-[0_0_10px_rgba(0,229,255,0.5)]"
+                style={{ width: "33.33%" }}
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="flex flex-col lg:flex-row gap-8">
           <div className="flex-1 w-full lg:w-[65%] flex flex-col gap-10">
             <div className="flex flex-col gap-2">
@@ -678,18 +698,6 @@ export default function Tickets() {
                   )}
                 </div>
 
-                <div className="flex gap-2 mt-2 mb-4">
-                  <input
-                    className="flex-1 bg-brand-deep border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-accent-cyan placeholder-white/30 transition-colors"
-                    placeholder="Cod Promo"
-                    type="text"
-                  />
-                  <button className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-white transition-colors border border-white/5">
-                    <span className="material-symbols-outlined text-sm font-bold">
-                      arrow_forward
-                    </span>
-                  </button>
-                </div>
 
                 {submitError && (
                   <div className="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
@@ -754,14 +762,15 @@ export default function Tickets() {
                   </span>
                 </div>
                 <div>
-                  <p className="font-bold text-sm text-white">
-                    Ai nevoie de ajutor?
+                  <p className="font-bold text-sm text-white">Ai nevoie de ajutor?</p>
+                  <p className="text-xs text-brand-text/70 mt-1">
+                    Scrie-ne la adresa de mai jos și revenim cât mai rapid.
                   </p>
                   <a
-                    className="text-xs text-accent-cyan font-medium hover:underline hover:text-cyan-300 transition-colors"
-                    href="#"
+                    className="mt-2 inline-block text-xs text-accent-cyan font-medium hover:underline hover:text-cyan-300 transition-colors"
+                    href="mailto:office.banaton@gmail.com"
                   >
-                    Contactează suportul
+                    office.banaton@gmail.com
                   </a>
                 </div>
               </div>

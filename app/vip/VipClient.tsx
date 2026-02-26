@@ -589,13 +589,13 @@ export default function VipClient() {
                     Progres Rezervare
                   </p>
                   <p className="text-accent-cyan/80 text-sm font-normal leading-normal">
-                    Pasul 4 din 5
+                    Pasul 2 din 3
                   </p>
                 </div>
                 <div className="h-2 w-full rounded-full bg-[#341C61]">
                   <div
                     className="h-2 rounded-full bg-gradient-to-r from-accent-gold to-accent-cyan shadow-[0_0_10px_rgba(0,229,255,0.5)]"
-                    style={{ width: "80%" }}
+                    style={{ width: "66.67%" }}
                   ></div>
                 </div>
               </div>

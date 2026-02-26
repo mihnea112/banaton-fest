@@ -106,9 +106,15 @@ function centsToRon(value: unknown): number {
   return Math.round((n / 100) * 100) / 100;
 }
 
+
 function upperCurrency(v: unknown): string | null {
   const s = asString(v);
   return s ? s.toUpperCase() : null;
+}
+
+function toInt(value: unknown, fallback = 0) {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function splitName(full: string | null): {
@@ -214,6 +220,7 @@ async function loadOrderByTokenOrId(params: {
   return data as OrderRow;
 }
 
+
 async function updateOrderByTokenOrId(params: {
   orderToken?: string | null;
   orderId?: string | null;
@@ -237,6 +244,115 @@ async function updateOrderByTokenOrId(params: {
     OrderRow,
     "id" | "public_token" | "status" | "payment_status"
   >;
+}
+
+/**
+ * Determine next ticket_number (global increment) so inserts don't fail if ticket_number is NOT NULL.
+ * NOTE: This is "good enough" for low concurrency. Best practice is GENERATED IDENTITY / SEQUENCE in DB.
+ */
+async function getNextTicketNumberStart(): Promise<number> {
+  const { data, error } = await supabase
+    .from("issued_tickets")
+    .select("ticket_number")
+    .order("ticket_number", { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+
+  const max = data && data[0] ? toInt((data[0] as any).ticket_number, 0) : 0;
+  return max + 1;
+}
+
+/**
+ * Issue tickets based on order_items.
+ * Idempotent: if at least one ticket exists for the order_id, do nothing.
+ */
+async function issueTicketsIfMissing(params: {
+  orderId: string;
+  orderToken: string;
+  attendeeName?: string | null;
+}) {
+  const { orderId, orderToken, attendeeName } = params;
+
+  // 1) already issued?
+  const { data: existing, error: existingErr } = await supabase
+    .from("issued_tickets")
+    .select("id")
+    .eq("order_id", orderId)
+    .limit(1);
+
+  if (existingErr) throw existingErr;
+  if (existing && existing.length > 0) {
+    console.log("[tickets] already issued for order, skipping", { orderId });
+    return;
+  }
+
+  // 2) load order_items
+  const { data: items, error: itemsErr } = await supabase
+    .from("order_items")
+    .select("id, qty, quantity, seats, tickets_count, name, label, product_name_snapshot")
+    .eq("order_id", orderId);
+
+  if (itemsErr) throw itemsErr;
+  if (!items || items.length === 0) {
+    console.warn("[tickets] no order_items found, cannot issue tickets", { orderId });
+    return;
+  }
+
+  // 3) determine ticket number start
+  let nextTicketNumber = await getNextTicketNumberStart();
+
+  // 4) build tickets rows
+  const rows: Array<{
+    order_id: string;
+    order_item_id: string;
+    ticket_number: number;
+    qr_code_text: string;
+    attendee_name: string | null;
+    status: string;
+    created_at: string;
+  }> = [];
+
+  for (const it of items as any[]) {
+    const qty = Math.max(
+      1,
+      toInt(it.qty ?? it.quantity ?? it.seats ?? it.tickets_count ?? 1, 1),
+    );
+
+    const displayName = it.name ?? it.label ?? it.product_name_snapshot ?? "Bilet";
+
+    for (let i = 1; i <= qty; i++) {
+      // QR text: unique + useful when scanning
+      const qr = `banaton:${orderToken}:${it.id}:${i}`;
+
+      rows.push({
+        order_id: orderId,
+        order_item_id: it.id,
+        ticket_number: nextTicketNumber++,
+        qr_code_text: qr,
+        attendee_name: attendeeName ?? null,
+        status: "valid",
+        created_at: nowIso(),
+      });
+    }
+
+    console.log("[tickets] prepared tickets", {
+      orderId,
+      orderItemId: it.id,
+      displayName,
+      qty,
+    });
+  }
+
+  // 5) insert in batches
+  const BATCH = 200;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const slice = rows.slice(i, i + BATCH);
+    const { error: insErr } = await supabase.from("issued_tickets").insert(slice);
+    if (insErr) throw insErr;
+  }
+
+  console.log("[tickets] issued tickets inserted", { orderId, count: rows.length });
 }
 
 function buildEnrichmentPatchFromSession(params: {
@@ -441,6 +557,29 @@ async function handlePaidOrder(params: {
     orderId: orderIdFromMeta,
     patch: { ...basePatch, ...enrichPatch },
   });
+
+  if (isPaid) {
+    // Prefer form name from metadata; do NOT use Stripe-collected email/name.
+    const md = (session.metadata || {}) as Record<string, unknown>;
+    const fullFromForm =
+      asString(md.customer_full_name) ||
+      asString(md.customerFullName) ||
+      [
+        asString(md.customer_first_name) || asString(md.customerFirstName),
+        asString(md.customer_last_name) || asString(md.customerLastName),
+      ]
+        .filter(Boolean)
+        .join(" ") ||
+      null;
+
+    const attendeeName = fullFromForm || null;
+
+    await issueTicketsIfMissing({
+      orderId: updated.id,
+      orderToken: updated.public_token,
+      attendeeName,
+    });
+  }
 
   console.log("[stripe webhook] order updated", {
     eventId: event.id,
