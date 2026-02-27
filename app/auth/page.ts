@@ -1,9 +1,16 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import React, { Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function AuthPage() {
+const outerDivClass =
+  "min-h-screen bg-[#130026] text-white flex items-center justify-center p-6";
+const formClass =
+  "w-full max-w-md rounded-2xl border border-[#4C2A85] bg-[#1A0B2E] p-6";
+const inputClass =
+  "mt-2 w-full h-12 rounded-xl bg-[#241242] border border-[#4C2A85] px-4 text-white";
+
+function AuthInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = useMemo(() => sp?.get("next") || "/admin", [sp]);
@@ -37,13 +44,6 @@ export default function AuthPage() {
     }
   }
 
-  const outerDivClass =
-    "min-h-screen bg-[#130026] text-white flex items-center justify-center p-6";
-  const formClass =
-    "w-full max-w-md rounded-2xl border border-[#4C2A85] bg-[#1A0B2E] p-6";
-  const inputClass =
-    "mt-2 w-full h-12 rounded-xl bg-[#241242] border border-[#4C2A85] px-4 text-white";
-
   const buttonClass =
     "mt-5 w-full h-12 rounded-xl font-bold " +
     (loading
@@ -57,7 +57,11 @@ export default function AuthPage() {
     React.createElement(
       "form",
       { onSubmit, className: formClass },
-      React.createElement("h1", { className: "text-2xl font-black" }, "Admin Access"),
+      React.createElement(
+        "h1",
+        { className: "text-2xl font-black" },
+        "Admin Access",
+      ),
       React.createElement(
         "p",
         { className: "text-indigo-200 text-sm mt-1" },
@@ -71,7 +75,8 @@ export default function AuthPage() {
           className: inputClass,
           type: "password",
           value: password,
-          onChange: (e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value),
+          onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+            setPassword(e.target.value),
           autoFocus: true,
         }),
       ),
@@ -95,5 +100,24 @@ export default function AuthPage() {
         loading ? "Se verifică..." : "Intră",
       ),
     ),
+  );
+}
+
+export default function AuthPage() {
+  // ✅ Next 15+: `useSearchParams()` must be inside a Suspense boundary.
+  return React.createElement(
+    Suspense,
+    {
+      fallback: React.createElement(
+        "div",
+        { className: outerDivClass },
+        React.createElement(
+          "div",
+          { className: "text-indigo-200 text-sm" },
+          "Se încarcă...",
+        ),
+      ),
+    },
+    React.createElement(AuthInner, null),
   );
 }
