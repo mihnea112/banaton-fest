@@ -32,6 +32,9 @@ type TicketsPublicResponse = {
   issued_tickets?: IssuedTicket[];
   error?: { message?: string };
   message?: string;
+  tickets_ready?: boolean;
+  tickets_email_sent?: boolean;
+  tickets_email_sent_at?: string | null;
 };
 
 function asString(v: unknown): string | null {
@@ -78,10 +81,14 @@ function normalizeTicketsPayload(input: TicketsPublicResponse): TicketsPublicRes
     // tolerate APIs that return `data` as the tickets array
     (Array.isArray(root.data) ? (root.data as any) : undefined);
 
+  // preserve new flags (they are already included in ...root, but ensure type)
   return {
     ...root,
     order: order || undefined,
     tickets: Array.isArray(tickets) ? tickets : [],
+    tickets_ready: root.tickets_ready,
+    tickets_email_sent: root.tickets_email_sent,
+    tickets_email_sent_at: root.tickets_email_sent_at,
   };
 }
 
@@ -170,14 +177,17 @@ export default function SuccessClient() {
 
           const paymentState = normalizePaymentState(payload.order);
           const hasTickets = (payload.tickets || []).length > 0;
+          const ticketsReady = payload.tickets_ready === true;
 
           if (!cancelled) setData(payload);
 
-          if (hasTickets || paymentState === "paid") {
+          // Stop only when tickets are actually ready
+          if (hasTickets || ticketsReady) {
             if (!cancelled) setIsPolling(false);
             return;
           }
 
+          // If paid but tickets not ready yet, keep polling for ticket issuance
           if (attempt < maxAttempts && !cancelled) {
             timer = setTimeout(() => void step(), 1500);
           } else if (!cancelled) {
@@ -312,6 +322,13 @@ export default function SuccessClient() {
                   {data?.order?.customer_email ? (
                     <span className="px-2 py-1 rounded-md border border-[#432C7A] text-[#B39DDB] bg-[#24123E]">
                       {data.order.customer_email}
+                    </span>
+                  ) : null}
+
+                  {/* Email sent badge */}
+                  {data?.tickets_email_sent ? (
+                    <span className="px-2 py-1 rounded-md border border-[#432C7A] text-emerald-200 bg-emerald-500/10">
+                      Email trimis
                     </span>
                   ) : null}
 
