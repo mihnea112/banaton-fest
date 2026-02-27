@@ -668,223 +668,422 @@ export default function VipClient() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto custom-scrollbar relative bg-[#0F0518] flex items-center justify-center p-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-[#2D1B4E] to-[#0F0518]">
-            <div className="relative w-[1000px] h-[700px] bg-[#1A0B2E] rounded-3xl border border-[#4C2A85] shadow-2xl shadow-purple-900/30 p-8 select-none transform scale-75 md:scale-90 lg:scale-100 origin-center transition-transform">
-              <div className="absolute right-6 top-6 z-20 rounded-xl border border-[#4C2A85] bg-[#241242]/80 backdrop-blur p-3 min-w-[250px]">
-                <p className="text-white text-sm font-semibold">Alocare VIP</p>
-                <p className="text-indigo-200 text-xs mt-1">
-                  Ai{" "}
-                  <span className="font-bold text-accent-gold">
-                    {requiredVipSeats}
-                  </span>{" "}
-                  bilete VIP în comandă. Alege o masă cu minim{" "}
-                  {requiredVipSeats || 1} locuri disponibile.
-                </p>
-                {selectedTable ? (
-                  <div className="mt-2 text-xs text-indigo-100 space-y-1">
-                    <p>
-                      Masă selectată:{" "}
-                      <span className="font-bold text-white">
-                        {selectedTable}
-                      </span>
+          <div className="flex-1 overflow-auto custom-scrollbar relative bg-[#0F0518] p-6 sm:p-8 lg:p-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-[#2D1B4E] to-[#0F0518]">
+            {/* ✅ MOBILE: simplified layout */}
+            <div className="lg:hidden mx-auto w-full max-w-3xl">
+              <div className="rounded-2xl border border-[#4C2A85] bg-[#1A0B2E]/80 backdrop-blur p-4 sm:p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-white text-sm font-semibold">Alocare VIP</p>
+                    <p className="text-indigo-200 text-xs mt-1">
+                      Ai{" "}
+                      <span className="font-bold text-accent-gold">{requiredVipSeats}</span>{" "}
+                      bilete VIP în comandă. Alege o zonă, apoi o masă.
                     </p>
-                    <p>
-                      Locuri disponibile:{" "}
-                      <span className="font-bold text-white">
-                        {availableSeatsForSelectedTable}
-                      </span>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="rounded-lg border border-[#4C2A85] bg-[#241242]/40 px-3 py-2">
+                        <p className="text-xs font-bold text-white">Stânga scenei</p>
+                        <p className="text-[11px] text-indigo-200">Mesele 1–100</p>
+                      </div>
+                      <div className="rounded-lg border border-accent-cyan/30 bg-accent-cyan/5 px-3 py-2">
+                        <p className="text-xs font-bold text-white">Mijloc</p>
+                        <p className="text-[11px] text-indigo-200">Fan Pit (în fața scenei)</p>
+                      </div>
+                      <div className="rounded-lg border border-[#4C2A85] bg-[#241242]/40 px-3 py-2">
+                        <p className="text-xs font-bold text-white">Dreapta scenei</p>
+                        <p className="text-[11px] text-indigo-200">Mesele 101–200</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void refreshAvailability(vipSelectedDayCodes)}
+                    className={cn(
+                      "shrink-0 px-3 py-2 rounded-lg border text-xs font-bold transition-colors",
+                      isLoadingAvailability
+                        ? "border-[#4C2A85] bg-[#241242]/60 text-indigo-200 cursor-wait"
+                        : "border-[#4C2A85] bg-[#241242] text-white hover:bg-[#341C61] hover:text-accent-cyan",
+                    )}
+                    disabled={isLoadingAvailability}
+                    title="Reîncarcă disponibilitatea"
+                  >
+                    {isLoadingAvailability ? "Se actualizează..." : "Refresh"}
+                  </button>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-4">
+                  <ZoneCircle
+                    id="1-25"
+                    label="1-25"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("1-25")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="26-50"
+                    label="26-50"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("26-50")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="51-75"
+                    label="51-75"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("51-75")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="76-100"
+                    label="76-100"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("76-100")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="101-125"
+                    label="101-125"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("101-125")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="126-150"
+                    label="126-150"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("126-150")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="151-175"
+                    label="151-175"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("151-175")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="176-200"
+                    label="176-200"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("176-200")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                </div>
+
+                {selectedTable && (
+                  <div className="mt-5 rounded-xl border border-accent-gold/20 bg-[#241242]/50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-white font-bold">{selectedTable}</p>
+                        <p className="text-indigo-200 text-xs mt-1">
+                          Locuri libere acum:{" "}
+                          <span className="font-bold text-white">{availableSeatsForSelectedTable}</span>
+                        </p>
+                        <p className="text-indigo-200 text-xs mt-1">
+                          Trebuie să aloci exact{" "}
+                          <span className="font-bold text-white">{requiredVipSeats}</span>{" "}
+                          locuri VIP.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTable(null)}
+                        className="text-xs text-indigo-200 hover:text-red-300"
+                      >
+                        Șterge
+                      </button>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 rounded-lg border border-[#4C2A85] bg-[#1A0B2E]/70 p-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSeats((prev) => Math.max(1, prev - 1))}
+                          className="w-9 h-9 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-40"
+                          disabled={selectedSeats <= 1}
+                        >
+                          <span className="material-symbols-outlined text-sm">remove</span>
+                        </button>
+                        <span className="min-w-[32px] text-center font-bold text-white">{selectedSeats}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedSeats((prev) =>
+                              Math.min(TABLE_CAPACITY, requiredVipSeats || 1, prev + 1),
+                            )
+                          }
+                          className="w-9 h-9 rounded bg-accent-cyan hover:bg-cyan-300 text-[#130026]"
+                          disabled={
+                            selectedSeats >= Math.min(TABLE_CAPACITY, requiredVipSeats || 1)
+                          }
+                        >
+                          <span className="material-symbols-outlined text-sm">add</span>
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleContinue}
+                        disabled={!canContinue || isSavingAllocation || isLoadingOrder}
+                        className={cn(
+                          "px-4 py-3 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2",
+                          canContinue && !isSavingAllocation && !isLoadingOrder
+                            ? "bg-gradient-to-r from-accent-gold to-[#FFC107] text-[#130026]"
+                            : "bg-[#4C2A85]/50 text-indigo-200 cursor-not-allowed",
+                        )}
+                      >
+                        {isSavingAllocation
+                          ? "Se salvează..."
+                          : canContinue
+                            ? "Continuă"
+                            : `Mai ai ${remainingVipSeats} de alocat`}
+                        <span className="material-symbols-outlined text-lg">arrow_forward</span>
+                      </button>
+                    </div>
+
+                    <p
+                      className={cn(
+                        "mt-3 text-xs font-semibold",
+                        selectedSeats === requiredVipSeats
+                          ? "text-accent-cyan"
+                          : "text-rose-300",
+                      )}
+                    >
+                      {selectedSeats === requiredVipSeats
+                        ? `Alocare completă: ${selectedSeats}/${requiredVipSeats}`
+                        : `Alocare incompletă: ${selectedSeats}/${requiredVipSeats}`}
                     </p>
                   </div>
-                ) : (
-                  <p className="mt-2 text-xs text-indigo-300">
-                    Nu ai selectat încă o masă.
-                  </p>
                 )}
               </div>
-
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-32 bg-gradient-to-b from-accent-cyan/20 to-transparent rounded-b-[4rem] border-b border-l border-r border-accent-cyan/30 flex items-center justify-center shadow-[0_10px_50px_-10px_rgba(0,229,255,0.2)] z-0">
-                <div className="text-center">
-                  <span className="text-accent-cyan font-black tracking-[0.3em] text-2xl uppercase drop-shadow-[0_0_10px_rgba(0,229,255,0.8)] block">
-                    Scenă Principală
-                  </span>
-                  <div className="w-full h-1 bg-accent-cyan/50 mt-2 rounded-full blur-[2px]"></div>
-                </div>
-              </div>
-
-              <div className="absolute top-40 left-1/2 -translate-x-1/2 w-[300px] h-[450px] border-2 border-dashed border-accent-cyan/30 rounded-[3rem] flex flex-col items-center justify-center bg-accent-cyan/5 hover:bg-accent-cyan/10 transition-colors group">
-                <span className="material-symbols-outlined text-6xl text-accent-cyan/20 mb-4 group-hover:scale-110 transition-transform">
-                  groups
-                </span>
-                <span className="text-accent-cyan font-black tracking-widest text-3xl uppercase drop-shadow-lg">
-                  Fan Pit
-                </span>
-                <span className="text-accent-cyan/60 text-sm font-bold tracking-wider mt-2">
-                  Standing Area
-                </span>
-              </div>
-
-              <div className="absolute left-12 top-40 grid grid-cols-2 gap-6">
-                <ZoneCircle
-                  id="1-25"
-                  label="1-25"
-                  price={vipUnitPrice || 0}
-                  onClick={() => handleZoneClick("1-25")}
-                  disabled={requiredVipSeats <= 0}
-                />
-                <ZoneCircle
-                  id="26-50"
-                  label="26-50"
-                  price={vipUnitPrice || 0}
-                  onClick={() => handleZoneClick("26-50")}
-                  disabled={requiredVipSeats <= 0}
-                />
-                <ZoneCircle
-                  id="51-75"
-                  label="51-75"
-                  price={vipUnitPrice || 0}
-                  onClick={() => handleZoneClick("51-75")}
-                  disabled={requiredVipSeats <= 0}
-                />
-                <ZoneCircle
-                  id="76-100"
-                  label="76-100"
-                  price={vipUnitPrice || 0}
-                  onClick={() => handleZoneClick("76-100")}
-                  disabled={requiredVipSeats <= 0}
-                />
-              </div>
-
-              <div className="absolute right-12 top-40 grid grid-cols-2 gap-6">
-                <ZoneCircle
-                  id="101-125"
-                  label="101-125"
-                  price={vipUnitPrice || 0}
-                  onClick={() => handleZoneClick("101-125")}
-                  disabled={requiredVipSeats <= 0}
-                />
-                <ZoneCircle
-                  id="126-150"
-                  label="126-150"
-                  price={vipUnitPrice || 0}
-                  onClick={() => handleZoneClick("126-150")}
-                  disabled={requiredVipSeats <= 0}
-                />
-                <ZoneCircle
-                  id="151-175"
-                  label="151-175"
-                  price={vipUnitPrice || 0}
-                  onClick={() => handleZoneClick("151-175")}
-                  disabled={requiredVipSeats <= 0}
-                />
-                <ZoneCircle
-                  id="176-200"
-                  label="176-200"
-                  price={vipUnitPrice || 0}
-                  onClick={() => handleZoneClick("176-200")}
-                  disabled={requiredVipSeats <= 0}
-                />
-              </div>
-
-              <div
-                className="absolute inset-0 pointer-events-none opacity-20 z-[-1]"
-                style={{
-                  backgroundImage:
-                    "radial-gradient(#00E5FF 1px, transparent 1px)",
-                  backgroundSize: "30px 30px",
-                }}
-              ></div>
             </div>
 
-            {selectedTable && (
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-2xl bg-[#341C61]/80 backdrop-blur-xl rounded-xl p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in-up border-t border-accent-cyan/20 border border-accent-gold/10 z-50">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-accent-cyan rounded-full flex items-center justify-center text-[#130026] shadow-[0_0_15px_rgba(0,229,255,0.4)]">
-                    <span className="material-symbols-outlined">table_bar</span>
-                  </div>
-                  <div>
-                    <h3 className="text-white font-bold text-lg">
-                      {selectedTable}
-                    </h3>
-                    <p className="text-indigo-200 text-sm flex items-center gap-1">
-                      <span className="material-symbols-outlined text-sm">
-                        groups
-                      </span>{" "}
-                      {TABLE_CAPACITY} Persoane / Masă
-                    </p>
-                    <p className="text-xs text-indigo-300 mt-1">
-                      Trebuie să aloci exact{" "}
-                      <span className="font-bold text-white">
-                        {requiredVipSeats}
-                      </span>{" "}
-                      locuri VIP.
-                    </p>
-                    <p className="text-xs text-indigo-300 mt-1">
-                      Locuri libere acum:{" "}
-                      <span className="font-bold text-white">
-                        {availableSeatsForSelectedTable}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col items-start md:items-end gap-2">
-                  <div className="flex items-center gap-3 rounded-lg border border-[#4C2A85] bg-[#1A0B2E]/70 p-2">
-                    <span className="text-xs text-indigo-200 px-1">
-                      Locuri VIP
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSelectedSeats((prev) => Math.max(1, prev - 1))
-                      }
-                      className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-40"
-                      disabled={selectedSeats <= 1}
-                    >
-                      <span className="material-symbols-outlined text-sm">
-                        remove
-                      </span>
-                    </button>
-                    <span className="min-w-[28px] text-center font-bold text-white">
-                      {selectedSeats}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSelectedSeats((prev) =>
-                          Math.min(
-                            TABLE_CAPACITY,
-                            requiredVipSeats || 1,
-                            prev + 1,
-                          ),
-                        )
-                      }
-                      className="w-8 h-8 rounded bg-accent-cyan hover:bg-cyan-300 text-[#130026]"
-                      disabled={
-                        selectedSeats >=
-                        Math.min(TABLE_CAPACITY, requiredVipSeats || 1)
-                      }
-                    >
-                      <span className="material-symbols-outlined text-sm">
-                        add
-                      </span>
-                    </button>
-                  </div>
-
-                  <p
-                    className={cn(
-                      "text-xs font-semibold",
-                      selectedSeats === requiredVipSeats
-                        ? "text-accent-cyan"
-                        : "text-rose-300",
-                    )}
-                  >
-                    {selectedSeats === requiredVipSeats
-                      ? `Alocare completă: ${selectedSeats}/${requiredVipSeats} locuri`
-                      : `Alocare incompletă: ${selectedSeats}/${requiredVipSeats} locuri`}
+            {/* ✅ DESKTOP (lg+): keep existing map layout */}
+            <div className="hidden lg:flex items-center justify-center">
+              <div className="relative w-[1000px] h-[700px] bg-[#1A0B2E] rounded-3xl border border-[#4C2A85] shadow-2xl shadow-purple-900/30 p-8 select-none transform scale-90 xl:scale-100 origin-center transition-transform">
+                <div className="absolute right-6 top-6 z-20 rounded-xl border border-[#4C2A85] bg-[#241242]/80 backdrop-blur p-3 min-w-[250px]">
+                  <p className="text-white text-sm font-semibold">Alocare VIP</p>
+                  <p className="text-indigo-200 text-xs mt-1">
+                    Ai{" "}
+                    <span className="font-bold text-accent-gold">{requiredVipSeats}</span>{" "}
+                    bilete VIP în comandă. Alege o masă cu minim{" "}
+                    {requiredVipSeats || 1} locuri disponibile.
                   </p>
+                  {selectedTable ? (
+                    <div className="mt-2 text-xs text-indigo-100 space-y-1">
+                      <p>
+                        Masă selectată:{" "}
+                        <span className="font-bold text-white">{selectedTable}</span>
+                      </p>
+                      <p>
+                        Locuri disponibile:{" "}
+                        <span className="font-bold text-white">
+                          {availableSeatsForSelectedTable}
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-indigo-300">
+                      Nu ai selectat încă o masă.
+                    </p>
+                  )}
                 </div>
+
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-32 bg-gradient-to-b from-accent-cyan/20 to-transparent rounded-b-[4rem] border-b border-l border-r border-accent-cyan/30 flex items-center justify-center shadow-[0_10px_50px_-10px_rgba(0,229,255,0.2)] z-0">
+                  <div className="text-center">
+                    <span className="text-accent-cyan font-black tracking-[0.3em] text-2xl uppercase drop-shadow-[0_0_10px_rgba(0,229,255,0.8)] block">
+                      Scenă Principală
+                    </span>
+                    <div className="w-full h-1 bg-accent-cyan/50 mt-2 rounded-full blur-[2px]"></div>
+                  </div>
+                </div>
+
+                <div className="absolute top-40 left-1/2 -translate-x-1/2 w-[300px] h-[450px] border-2 border-dashed border-accent-cyan/30 rounded-[3rem] flex flex-col items-center justify-center bg-accent-cyan/5 hover:bg-accent-cyan/10 transition-colors group">
+                  <span className="material-symbols-outlined text-6xl text-accent-cyan/20 mb-4 group-hover:scale-110 transition-transform">
+                    groups
+                  </span>
+                  <span className="text-accent-cyan font-black tracking-widest text-3xl uppercase drop-shadow-lg">
+                    Fan Pit
+                  </span>
+                  <span className="text-accent-cyan/60 text-sm font-bold tracking-wider mt-2">
+                    Zona din mijloc (Fan Pit)
+                  </span>
+                </div>
+
+                <div className="absolute left-12 top-28">
+                  <div className="inline-flex items-center gap-2 rounded-lg border border-[#4C2A85] bg-[#241242]/70 px-3 py-2 text-xs text-indigo-100">
+                    <span className="material-symbols-outlined text-sm text-accent-gold">arrow_back</span>
+                    <span className="font-semibold text-white">Stânga scenei</span>
+                    <span className="text-indigo-200">(mesele 1–100)</span>
+                  </div>
+                </div>
+                <div className="absolute left-12 top-40 grid grid-cols-2 gap-6">
+                  <ZoneCircle
+                    id="1-25"
+                    label="1-25"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("1-25")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="26-50"
+                    label="26-50"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("26-50")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="51-75"
+                    label="51-75"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("51-75")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="76-100"
+                    label="76-100"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("76-100")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                </div>
+
+                <div className="absolute right-12 top-28">
+                  <div className="inline-flex items-center gap-2 rounded-lg border border-[#4C2A85] bg-[#241242]/70 px-3 py-2 text-xs text-indigo-100">
+                    <span className="text-indigo-200">(mesele 101–200)</span>
+                    <span className="font-semibold text-white">Dreapta scenei</span>
+                    <span className="material-symbols-outlined text-sm text-accent-gold">arrow_forward</span>
+                  </div>
+                </div>
+                <div className="absolute right-12 top-40 grid grid-cols-2 gap-6">
+                  <ZoneCircle
+                    id="101-125"
+                    label="101-125"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("101-125")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="126-150"
+                    label="126-150"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("126-150")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="151-175"
+                    label="151-175"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("151-175")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                  <ZoneCircle
+                    id="176-200"
+                    label="176-200"
+                    price={vipUnitPrice || 0}
+                    onClick={() => handleZoneClick("176-200")}
+                    disabled={requiredVipSeats <= 0}
+                  />
+                </div>
+
+                <div
+                  className="absolute inset-0 pointer-events-none opacity-20 z-[-1]"
+                  style={{
+                    backgroundImage:
+                      "radial-gradient(#00E5FF 1px, transparent 1px)",
+                    backgroundSize: "30px 30px",
+                  }}
+                ></div>
               </div>
-            )}
+
+              {selectedTable && (
+                <div className="hidden lg:flex absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-2xl bg-[#341C61]/80 backdrop-blur-xl rounded-xl p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in-up border-t border-accent-cyan/20 border border-accent-gold/10 z-50">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-accent-cyan rounded-full flex items-center justify-center text-[#130026] shadow-[0_0_15px_rgba(0,229,255,0.4)]">
+                      <span className="material-symbols-outlined">table_bar</span>
+                    </div>
+                    <div>
+                      <h3 className="text-white font-bold text-lg">{selectedTable}</h3>
+                      <p className="text-indigo-200 text-sm flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">
+                          groups
+                        </span>{" "}
+                        {TABLE_CAPACITY} Persoane / Masă
+                      </p>
+                      <p className="text-xs text-indigo-300 mt-1">
+                        Trebuie să aloci exact{" "}
+                        <span className="font-bold text-white">{requiredVipSeats}</span>{" "}
+                        locuri VIP.
+                      </p>
+                      <p className="text-xs text-indigo-300 mt-1">
+                        Locuri libere acum:{" "}
+                        <span className="font-bold text-white">
+                          {availableSeatsForSelectedTable}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-start md:items-end gap-2">
+                    <div className="flex items-center gap-3 rounded-lg border border-[#4C2A85] bg-[#1A0B2E]/70 p-2">
+                      <span className="text-xs text-indigo-200 px-1">
+                        Locuri VIP
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedSeats((prev) => Math.max(1, prev - 1))
+                        }
+                        className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-40"
+                        disabled={selectedSeats <= 1}
+                      >
+                        <span className="material-symbols-outlined text-sm">
+                          remove
+                        </span>
+                      </button>
+                      <span className="min-w-[28px] text-center font-bold text-white">
+                        {selectedSeats}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedSeats((prev) =>
+                            Math.min(
+                              TABLE_CAPACITY,
+                              requiredVipSeats || 1,
+                              prev + 1,
+                            ),
+                          )
+                        }
+                        className="w-8 h-8 rounded bg-accent-cyan hover:bg-cyan-300 text-[#130026]"
+                        disabled={
+                          selectedSeats >=
+                          Math.min(TABLE_CAPACITY, requiredVipSeats || 1)
+                        }
+                      >
+                        <span className="material-symbols-outlined text-sm">
+                          add
+                        </span>
+                      </button>
+                    </div>
+
+                    <p
+                      className={cn(
+                        "text-xs font-semibold",
+                        selectedSeats === requiredVipSeats
+                          ? "text-accent-cyan"
+                          : "text-rose-300",
+                      )}
+                    >
+                      {selectedSeats === requiredVipSeats
+                        ? `Alocare completă: ${selectedSeats}/${requiredVipSeats} locuri`
+                        : `Alocare incompletă: ${selectedSeats}/${requiredVipSeats} locuri`}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </main>
 
