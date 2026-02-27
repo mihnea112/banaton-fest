@@ -41,6 +41,9 @@ function formatDate(value?: string | null) {
 
 export default function AdminClient() {
   const [data, setData] = useState<Overview | null>(null);
+  const [isDeletingUnpaid, setIsDeletingUnpaid] = useState(false);
+  const [deleteUnpaidError, setDeleteUnpaidError] = useState<string | null>(null);
+  const [deleteUnpaidMessage, setDeleteUnpaidMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/overview", { cache: "no-store" });
@@ -75,6 +78,71 @@ export default function AdminClient() {
             >
               Refresh
             </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                if (isDeletingUnpaid) return;
+
+                setDeleteUnpaidError(null);
+                setDeleteUnpaidMessage(null);
+
+                const ok = window.confirm(
+                  "Ștergi toate comenzile NEPLĂTITE (draft/unpaid/pending)? Această acțiune este ireversibilă.",
+                );
+                if (!ok) return;
+
+                try {
+                  setIsDeletingUnpaid(true);
+                  const res = await fetch("/api/admin/orders/delete-unpaid", {
+                    method: "POST",
+                    headers: { Accept: "application/json" },
+                  });
+
+                  const json = (await res.json().catch(() => ({}))) as any;
+
+                  if (!res.ok || json?.ok === false) {
+                    throw new Error(
+                      json?.error?.message ||
+                        json?.message ||
+                        `Nu am putut șterge comenzile neplătite (${res.status}).`,
+                    );
+                  }
+
+                  const deleted =
+                    typeof json?.deleted === "number"
+                      ? json.deleted
+                      : typeof json?.data?.deleted === "number"
+                        ? json.data.deleted
+                        : null;
+
+                  setDeleteUnpaidMessage(
+                    deleted !== null
+                      ? `Ștergere completă: ${deleted} comenzi neplătite.`
+                      : "Ștergere completă.",
+                  );
+
+                  // refresh dashboard data
+                  await load();
+                } catch (err) {
+                  setDeleteUnpaidError(
+                    err instanceof Error
+                      ? err.message
+                      : "A apărut o eroare la ștergerea comenzilor neplătite.",
+                  );
+                } finally {
+                  setIsDeletingUnpaid(false);
+                }
+              }}
+              disabled={isDeletingUnpaid}
+              className={
+                "px-4 py-2 rounded-lg border border-red-400/40 bg-red-500/10 text-red-100 hover:bg-red-500/15 " +
+                (isDeletingUnpaid ? "opacity-60 cursor-not-allowed" : "")
+              }
+            >
+              {isDeletingUnpaid ? "Șterg..." : "Șterge comenzile neplătite"}
+            </button>
+
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -88,6 +156,20 @@ export default function AdminClient() {
             </form>
           </div>
         </div>
+
+        {(deleteUnpaidError || deleteUnpaidMessage) && (
+          <div className="mt-4">
+            {deleteUnpaidError ? (
+              <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-red-100">
+                {deleteUnpaidError}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-emerald-100">
+                {deleteUnpaidMessage}
+              </div>
+            )}
+          </div>
+        )}
 
         {!data ? (
           <div className="mt-6 text-indigo-200">Loading...</div>
