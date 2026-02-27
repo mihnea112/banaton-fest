@@ -29,24 +29,6 @@ function asString(value: unknown): string | null {
     : null;
 }
 
-function buildFullName(firstName: string | null, lastName: string | null) {
-  return [firstName, lastName].filter(Boolean).join(" ") || null;
-}
-
-function splitCityCounty(input: string | null): {
-  city: string | null;
-  county: string | null;
-} {
-  if (!input) return { city: null, county: null };
-  const parts = input
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (parts.length === 0) return { city: null, county: null };
-  if (parts.length === 1) return { city: parts[0], county: null };
-  return { city: parts[0], county: parts.slice(1).join(", ") };
-}
-
 function toNumber(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
@@ -213,27 +195,36 @@ export async function POST(req: NextRequest) {
       unknown
     >;
 
-    // Optional customer/billing data coming from Checkout form (Option A)
+    // Optional customer data coming from Checkout form
+    // GDPR: we collect only email + phone in our UI. Everything else may come from Stripe,
+    // but email MUST always be the one from our form.
     const customerObj =
       body.customer && typeof body.customer === "object"
         ? (body.customer as Record<string, unknown>)
         : null;
-    const billingObj =
-      body.billing && typeof body.billing === "object"
-        ? (body.billing as Record<string, unknown>)
-        : null;
 
-    const customerFirstName = asString(customerObj?.firstName ?? body.customer_first_name);
-    const customerLastName = asString(customerObj?.lastName ?? body.customer_last_name);
-    const customerEmail = asString(customerObj?.email ?? body.customer_email);
-    const customerPhone = asString(customerObj?.phone ?? body.customer_phone);
+    // Accept multiple shapes defensively
+    const customerEmail = asString(
+      customerObj?.email ??
+        (body as any).customer_email ??
+        (body as any).email ??
+        (body as any).customerEmail,
+    );
 
-    const billingAddress = asString(billingObj?.address ?? body.billing_address);
-    const cityCountyRaw = asString(billingObj?.cityCounty ?? body.billing_city_county);
-    const { city: billingCity, county: billingCounty } = splitCityCounty(cityCountyRaw);
+    const customerPhone = asString(
+      customerObj?.phone ??
+        (body as any).customer_phone ??
+        (body as any).phone ??
+        (body as any).customerPhone,
+    );
 
-    const customerFullName = buildFullName(customerFirstName, customerLastName);
-    const billingName = customerFullName;
+    // Require email + phone from our checkout form (GDPR choice)
+    if (!customerEmail || !customerPhone) {
+      return NextResponse.json(
+        { error: "Te rog completează email și număr de telefon pentru a continua." },
+        { status: 400 },
+      );
+    }
 
     const orderToken =
       (typeof body.orderToken === "string" && body.orderToken) ||
@@ -326,15 +317,17 @@ export async function POST(req: NextRequest) {
 
     if (typeof order.id === "string" && order.id) metadata.order_id = order.id;
 
-    // Mirror checkout form data into Stripe metadata so webhook can always recover it.
-    if (customerEmail) metadata.customer_email = customerEmail;
-    if (customerFirstName) metadata.customer_first_name = customerFirstName;
-    if (customerLastName) metadata.customer_last_name = customerLastName;
-    if (customerFullName) metadata.customer_full_name = customerFullName;
-    if (customerPhone) metadata.customer_phone = customerPhone;
-    if (billingCity) metadata.billing_city = billingCity;
-    if (billingCounty) metadata.billing_county = billingCounty;
-    if (billingAddress) metadata.billing_address = billingAddress;
+    // Mirror ONLY the form email/phone into Stripe metadata so webhook can always recover it.
+    // IMPORTANT: In our system, customer_email must always be the one from the form (not Stripe).
+    if (customerEmail) {
+      metadata.customer_email = customerEmail;
+      // extra compatibility in case some code reads camelCase
+      metadata.customerEmail = customerEmail;
+    }
+    if (customerPhone) {
+      metadata.customer_phone = customerPhone;
+      metadata.customerPhone = customerPhone;
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -347,7 +340,9 @@ export async function POST(req: NextRequest) {
       metadata,
       payment_intent_data: { metadata },
       customer_creation: "if_required",
-      customer_email: customerEmail ?? undefined,
+      // Prefill Stripe Checkout email with OUR form email.
+      // User may still change it in Stripe UI; webhook will ignore Stripe email and use metadata instead.
+      customer_email: customerEmail,
     });
 
     if (!session.url) {
@@ -359,30 +354,32 @@ export async function POST(req: NextRequest) {
 
     // ✅ Persist mapping in DB immediately
     const supabase = getSupabaseAdmin();
+
+    const patch: Record<string, unknown> = {
+      payment_provider: "stripe",
+      payment_status: "pending",
+      payment_reference: session.id,
+      payment_provider_intent_id:
+        typeof session.payment_intent === "string"
+          ? session.payment_intent
+          : (session.payment_intent?.id ?? null),
+      updated_at: new Date().toISOString(),
+    };
+
+    console.log("[checkout-session] form contact", {
+      orderToken,
+      customerEmail,
+      customerPhone,
+      stripeSessionId: session.id,
+    });
+
+    // Persist ONLY what we collect in the checkout form (never Stripe email)
+    if (customerEmail) patch.customer_email = customerEmail;
+    if (customerPhone) patch.customer_phone = customerPhone;
+
     const { error: updErr } = await supabase
       .from("orders")
-      .update({
-        payment_provider: "stripe",
-        payment_status: "pending",
-        payment_reference: session.id,
-        payment_provider_intent_id:
-          typeof session.payment_intent === "string"
-            ? session.payment_intent
-            : (session.payment_intent?.id ?? null),
-
-        // Option A: persist checkout form fields now (webhook can confirm later)
-        customer_first_name: customerFirstName,
-        customer_last_name: customerLastName,
-        customer_full_name: customerFullName,
-        customer_email: customerEmail,
-        customer_phone: customerPhone,
-        billing_name: billingName,
-        billing_city: billingCity,
-        billing_county: billingCounty,
-        billing_address: billingAddress,
-
-        updated_at: new Date().toISOString(),
-      })
+      .update(patch)
       .eq("public_token", orderToken);
 
     if (updErr) {

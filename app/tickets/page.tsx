@@ -64,7 +64,7 @@ const PRODUCTS: TicketProduct[] = [
     name: "Abonament 3 Zile",
     durationLabel: "3 Zile",
     price: 80,
-    description: "Valabil pentru Vineri + Duminică + Luni",
+    description: "Valabil pentru Vineri (29.05) + Duminică (31.05) + Luni (01.06)",
   },
   {
     id: "gen-2day",
@@ -72,11 +72,11 @@ const PRODUCTS: TicketProduct[] = [
     name: "Abonament 2 Zile",
     durationLabel: "2 Zile",
     price: 60,
-    description: "Alege orice 2 zile dintre Vineri, Duminică și Luni",
+    description: "Alege orice 2 zile dintre Vineri (29.05), Duminică (31.05) și Luni (01.06)",
     variants: [
-      { id: "gen-2day-fri-sun", label: "Vineri + Duminică", price: 60 },
-      { id: "gen-2day-fri-mon", label: "Vineri + Luni", price: 60 },
-      { id: "gen-2day-sun-mon", label: "Duminică + Luni", price: 60 },
+      { id: "gen-2day-fri-sun", label: "Vineri (29.05) + Duminică (31.05)", price: 60 },
+      { id: "gen-2day-fri-mon", label: "Vineri (29.05) + Luni (01.06)", price: 60 },
+      { id: "gen-2day-sun-mon", label: "Duminică (31.05) + Luni (01.06)", price: 60 },
     ],
   },
   {
@@ -85,12 +85,12 @@ const PRODUCTS: TicketProduct[] = [
     name: "Bilet 1 Zi",
     durationLabel: "1 Zi",
     price: 50,
-    description: "Vineri, Duminică și Luni: 50 RON / Sâmbătă: 80 RON",
+    description: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 50 RON / Sâmbătă (30.05): 80 RON",
     variants: [
-      { id: "gen-1day-fri", label: "Vineri", price: 50 },
-      { id: "gen-1day-sat", label: "Sâmbătă", price: 80 },
-      { id: "gen-1day-sun", label: "Duminică", price: 50 },
-      { id: "gen-1day-mon", label: "Luni", price: 50 },
+      { id: "gen-1day-fri", label: "Vineri (29.05)", price: 50 },
+      { id: "gen-1day-sat", label: "Sâmbătă (30.05)", price: 80 },
+      { id: "gen-1day-sun", label: "Duminică (31.05)", price: 50 },
+      { id: "gen-1day-mon", label: "Luni (01.06)", price: 50 },
     ],
   },
 
@@ -112,10 +112,10 @@ const PRODUCTS: TicketProduct[] = [
     price: 200,
     description: "Include loc la masă (selectezi masa în pagina de mese VIP)",
     variants: [
-      { id: "vip-1day-fri", label: "Vineri", price: 200 },
-      { id: "vip-1day-sat", label: "Sâmbătă (CECA)", price: 350 },
-      { id: "vip-1day-sun", label: "Duminică", price: 200 },
-      { id: "vip-1day-mon", label: "Luni", price: 200 },
+      { id: "vip-1day-fri", label: "Vineri (29.05)", price: 200 },
+      { id: "vip-1day-sat", label: "Sâmbătă (30.05) (CECA)", price: 350 },
+      { id: "vip-1day-sun", label: "Duminică (31.05)", price: 200 },
+      { id: "vip-1day-mon", label: "Luni (01.06)", price: 200 },
     ],
   },
 ];

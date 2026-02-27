@@ -37,8 +37,6 @@ interface DraftOrder {
   status?: string | null;
   paymentStatus?: string | null;
 
-  customerFirstName?: string;
-  customerLastName?: string;
   customerEmail?: string;
   customerPhone?: string;
   billingCity?: string;
@@ -371,18 +369,6 @@ function extractOrderFromApi(payload: unknown): DraftOrder | null {
         (candidate as any).payment_status) ||
       null,
 
-    customerFirstName:
-      (typeof candidate.customerFirstName === "string" &&
-        candidate.customerFirstName) ||
-      (typeof candidate.customer_first_name === "string" &&
-        candidate.customer_first_name) ||
-      undefined,
-    customerLastName:
-      (typeof candidate.customerLastName === "string" &&
-        candidate.customerLastName) ||
-      (typeof candidate.customer_last_name === "string" &&
-        candidate.customer_last_name) ||
-      undefined,
     customerEmail:
       (typeof candidate.customerEmail === "string" &&
         candidate.customerEmail) ||
@@ -543,9 +529,8 @@ export default function CheckoutClient() {
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
-  const [billingFirstName, setBillingFirstName] = useState("");
-  const [billingLastName, setBillingLastName] = useState("");
   const [billingEmail, setBillingEmail] = useState("");
+  const [billingPhone, setBillingPhone] = useState("");
 
   // ✅ payment status UX
   const isPaid = (orderDraft?.status || "").toLowerCase() === "paid";
@@ -617,9 +602,8 @@ export default function CheckoutClient() {
 
           // Option A: hydrate only email if backend provides it
           if (apiOrder) {
-            setBillingFirstName(apiOrder.customerFirstName ?? "");
-            setBillingLastName(apiOrder.customerLastName ?? "");
             setBillingEmail(apiOrder.customerEmail ?? "");
+            setBillingPhone(apiOrder.customerPhone ?? "");
           }
         }
       } catch (err) {
@@ -785,12 +769,8 @@ export default function CheckoutClient() {
     : "Plătește";
 
   const isBillingFormComplete = useMemo(() => {
-    return (
-      billingFirstName.trim().length > 0 &&
-      billingLastName.trim().length > 0 &&
-      billingEmail.trim().length > 0
-    );
-  }, [billingFirstName, billingLastName, billingEmail]);
+    return billingEmail.trim().length > 0 && billingPhone.trim().length > 0;
+  }, [billingEmail, billingPhone]);
 
   const canProceedToPayment =
     !!orderDraft &&
@@ -868,15 +848,13 @@ export default function CheckoutClient() {
           orderToken: publicOrderToken,
           token: publicOrderToken,
           publicToken: publicOrderToken,
-          // Option A: name + surname + email
           email: billingEmail.trim(),
           customer_email: billingEmail.trim(),
-          customer_first_name: billingFirstName.trim(),
-          customer_last_name: billingLastName.trim(),
+          phone: billingPhone.trim(),
+          customer_phone: billingPhone.trim(),
           customer: {
-            firstName: billingFirstName.trim(),
-            lastName: billingLastName.trim(),
             email: billingEmail.trim(),
+            phone: billingPhone.trim(),
           },
         }),
       });
@@ -998,44 +976,6 @@ export default function CheckoutClient() {
                 </h3>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <label className="flex flex-col gap-2 group">
-                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
-                    Prenume
-                  </span>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
-                      badge
-                    </span>
-                    <input
-                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
-                      placeholder="Ion"
-                      type="text"
-                      value={billingFirstName}
-                      onChange={(e) => setBillingFirstName(e.target.value)}
-                      disabled={isPaid}
-                    />
-                  </div>
-                </label>
-
-                <label className="flex flex-col gap-2 group">
-                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
-                    Nume
-                  </span>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
-                      person
-                    </span>
-                    <input
-                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
-                      placeholder="Popescu"
-                      type="text"
-                      value={billingLastName}
-                      onChange={(e) => setBillingLastName(e.target.value)}
-                      disabled={isPaid}
-                    />
-                  </div>
-                </label>
-
                 <label className="flex flex-col gap-2 md:col-span-2 group">
                   <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
                     Adresă de Email
@@ -1059,6 +999,24 @@ export default function CheckoutClient() {
                     </span>
                     Biletele vor fi trimise la această adresă.
                   </p>
+                </label>
+                <label className="flex flex-col gap-2 md:col-span-2 group">
+                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
+                    Telefon
+                  </span>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
+                      call
+                    </span>
+                    <input
+                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
+                      placeholder="07xx xxx xxx"
+                      type="tel"
+                      value={billingPhone}
+                      onChange={(e) => setBillingPhone(e.target.value)}
+                      disabled={isPaid}
+                    />
+                  </div>
                 </label>
               </div>
             </section>
@@ -1295,7 +1253,7 @@ export default function CheckoutClient() {
                     orderDraft.items.length > 0 &&
                     !isPaid && (
                       <div className="rounded-xl border border-[#432C7A] bg-[#24123E]/70 p-3 text-sm text-[#D1C4E9]">
-                        {"Completează numele, prenumele și emailul pentru a continua plata."}
+                        {"Completează emailul și numărul de telefon pentru a continua plata."}
                       </div>
                     )}
 
@@ -1350,7 +1308,7 @@ export default function CheckoutClient() {
                             : "arrow_back"}
                       </span>
                       {!isBillingFormComplete
-                        ? "Completează emailul"
+                        ? "Completează datele"
                         : hasVipItems
                           ? "Alege masa VIP"
                           : "Mergi la bilete"}

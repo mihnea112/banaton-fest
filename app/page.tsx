@@ -1,11 +1,28 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 export default function Home() {
   const [selectedProgramDay, setSelectedProgramDay] = useState<"vineri" | "sambata" | "duminica" | "luni">("vineri");
 
-  const programDays = [
+  type ProgramDay = {
+    id: "vineri" | "sambata" | "duminica" | "luni";
+    tabLabel: string;
+    tabDate: string;
+    badge: string;
+    time: string;
+    stage: string;
+    icon: string;
+    artistImage: string;
+    title: string;
+    subtitle: string;
+    accent: "gold" | "cyan";
+    ctaLabel: string;
+    tag?: string;
+    imageFit?: "cover" | "contain";
+  };
+
+  const programDays: ProgramDay[] = [
     {
       id: "vineri" as const,
       tabLabel: "Vineri",
@@ -14,6 +31,8 @@ export default function Home() {
       time: "18:00",
       stage: "Main Stage",
       icon: "emoji_events",
+      artistImage: "/images/orchestra-rts.jpeg",
+      imageFit: "cover" as const,
       title: "Balkan Folk Pop Music Awards",
       subtitle: "Orchestra RTS și câștigători. Deschiderea oficială a festivalului cu o seară de gală.",
       accent: "gold" as const,
@@ -27,6 +46,8 @@ export default function Home() {
       time: "18:00",
       stage: "Main Stage",
       icon: "mic",
+      artistImage: "/images/ceca.jpg",
+      imageFit: "contain" as const,
       title: "Concert The Icon – CECA",
       subtitle: "Concert special cu CECA, cap de afiș al ediției.",
       accent: "cyan" as const,
@@ -41,6 +62,8 @@ export default function Home() {
       time: "18:00",
       stage: "Main Stage",
       icon: "music_note",
+      artistImage: "/images/zvonko-bogdan.jpeg",
+      imageFit: "cover" as const,
       title: "Banaton Tradițional - Rădăcini și Identitate",
       subtitle: "Zvonko Bogdan și invitați într-un spectacol de tradiție și emoție.",
       accent: "cyan" as const,
@@ -55,6 +78,8 @@ export default function Home() {
       time: "17:00",
       stage: "Main Stage",
       icon: "bolt",
+      artistImage: "/images/elektricni-orgazam.jpg",
+      imageFit: "cover" as const,
       title: "Banaton Chitariada Rock",
       subtitle: "ELEKTRIČNI ORGAZAM din Belgrad și alți invitați.",
       accent: "cyan" as const,
@@ -63,8 +88,15 @@ export default function Home() {
     },
   ];
 
+  const [programImageErrors, setProgramImageErrors] = useState<Record<string, boolean>>({});
+
   const activeProgram =
     programDays.find((day) => day.id === selectedProgramDay) ?? programDays[0];
+
+  const activeProgramImageFailed = useMemo(() => {
+    if (!activeProgram?.artistImage) return true;
+    return !!programImageErrors[activeProgram.id];
+  }, [activeProgram, programImageErrors]);
 
   return (
     <div className="relative flex min-h-screen w-full flex-col bg-[#120818] text-white font-display overflow-x-hidden selection:bg-accent-cyan selection:text-black">
@@ -196,7 +228,15 @@ export default function Home() {
                     <button
                       key={day.id}
                       type="button"
-                      onClick={() => setSelectedProgramDay(day.id)}
+                      onClick={() => {
+                        setSelectedProgramDay(day.id);
+                        setProgramImageErrors((prev) => {
+                          if (!prev[day.id]) return prev;
+                          const next = { ...prev };
+                          delete next[day.id];
+                          return next;
+                        });
+                      }}
                       className={
                         isActive
                           ? "px-6 py-2.5 rounded-full bg-accent-cyan text-background-dark text-sm font-bold shadow-[0_0_15px_rgba(0,240,255,0.3)] transition-all whitespace-nowrap"
@@ -246,20 +286,40 @@ export default function Home() {
 
                 <div
                   className={
-                    activeProgram.accent === "gold"
-                      ? "relative size-20 md:size-24 shrink-0 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center border-2 border-accent-gold shadow-[0_0_15px_rgba(255,215,0,0.3)]"
-                      : "relative size-16 md:size-20 shrink-0 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center border-2 border-white/10 group-hover:border-accent-cyan transition-colors"
+                    (activeProgram.accent === "gold"
+                      ? "relative shrink-0 overflow-hidden bg-primary/20 flex items-center justify-center border-2 border-accent-gold shadow-[0_0_15px_rgba(255,215,0,0.3)]"
+                      : "relative shrink-0 overflow-hidden bg-primary/20 flex items-center justify-center border-2 border-white/10 group-hover:border-accent-cyan transition-colors") +
+                    (activeProgram.imageFit === "contain"
+                      ? " w-32 h-44 md:w-40 md:h-56"
+                      : " w-44 h-28 md:w-60 md:h-36")
                   }
                 >
-                  <span
-                    className={
-                      activeProgram.accent === "gold"
-                        ? "material-symbols-outlined text-4xl text-accent-gold"
-                        : "material-symbols-outlined text-3xl text-primary"
-                    }
-                  >
-                    {activeProgram.icon}
-                  </span>
+                  {!activeProgramImageFailed ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={activeProgram.artistImage}
+                      alt={activeProgram.title}
+                      className={
+                        "block h-full w-full " +
+                        (activeProgram.imageFit === "contain"
+                          ? "object-contain bg-[#120818]"
+                          : "object-cover object-center")
+                      }
+                      onError={() =>
+                        setProgramImageErrors((prev) => ({ ...prev, [activeProgram.id]: true }))
+                      }
+                    />
+                  ) : (
+                    <span
+                      className={
+                        activeProgram.accent === "gold"
+                          ? "material-symbols-outlined text-4xl text-accent-gold"
+                          : "material-symbols-outlined text-4xl text-primary"
+                      }
+                    >
+                      {activeProgram.icon}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex-1 text-center md:text-left space-y-2">
@@ -324,23 +384,47 @@ export default function Home() {
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
                 <h3 className="text-xl font-bold text-white mb-4">Acces General</h3>
                 <div className="space-y-3 text-sm">
-                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2"><span className="text-gray-300">Pachet 4 zile</span><span className="font-bold text-accent-cyan">100 lei</span></div>
-                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2"><span className="text-gray-300">Bilet simplu / zi</span><span className="font-bold text-accent-cyan">50 lei</span></div>
-                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2"><span className="text-gray-300">Bilete pentru 2 zile</span><span className="font-bold text-accent-cyan">60 lei</span></div>
-                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2"><span className="text-gray-300">Bilete pentru 3 zile</span><span className="font-bold text-accent-cyan">80 lei</span></div>
-                  <div className="flex items-center justify-between gap-4"><span className="text-gray-300">Bilet Sâmbătă - Concert CECA</span><span className="font-bold text-accent-gold">100 lei</span></div>
+                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
+                    <span className="text-gray-300">Pachet 4 zile</span>
+                    <span className="font-bold text-accent-cyan">120 lei</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
+                    <span className="text-gray-300">Bilet simplu / zi (Vineri, Duminică, Luni)</span>
+                    <span className="font-bold text-accent-cyan">50 lei</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
+                    <span className="text-gray-300">Bilet Sâmbătă - Concert CECA</span>
+                    <span className="font-bold text-accent-gold">80 lei</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
+                    <span className="text-gray-300">Bilete pentru 2 zile (Vineri/Duminică/Luni)</span>
+                    <span className="font-bold text-accent-cyan">60 lei</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-gray-300">Bilete pentru 3 zile (Vineri + Duminică + Luni)</span>
+                    <span className="font-bold text-accent-cyan">80 lei</span>
+                  </div>
                 </div>
               </div>
 
               <div className="rounded-2xl border border-accent-gold/20 bg-accent-gold/5 p-5">
                 <h3 className="text-xl font-bold text-white mb-4">VIP</h3>
                 <div className="space-y-3 text-sm">
-                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2"><span className="text-gray-300">VIP / persoană / zi (vineri, duminică, luni)</span><span className="font-bold text-accent-gold">250 lei</span></div>
-                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2"><span className="text-gray-300">VIP Concert CECA (sâmbătă)</span><span className="font-bold text-accent-gold">350 lei</span></div>
-                  <div className="flex items-center justify-between gap-4"><span className="text-gray-300">VIP 4 zile</span><span className="font-bold text-accent-gold">800 lei</span></div>
+                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
+                    <span className="text-gray-300">VIP / persoană / zi (Vineri, Duminică, Luni)</span>
+                    <span className="font-bold text-accent-gold">200 lei</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
+                    <span className="text-gray-300">VIP Concert CECA (sâmbătă)</span>
+                    <span className="font-bold text-accent-gold">350 lei</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-gray-300">VIP 4 zile</span>
+                    <span className="font-bold text-accent-gold">750 lei</span>
+                  </div>
                 </div>
                 <p className="text-xs text-gray-400 mt-4">
-                  Pentru VIP se selectează masa în procesul de cumpărare.
+                  Pentru VIP se selectează masa în pasul VIP (înainte de checkout).
                 </p>
               </div>
             </div>
