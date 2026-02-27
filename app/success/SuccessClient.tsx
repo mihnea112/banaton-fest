@@ -254,12 +254,6 @@ export default function SuccessClient() {
     [data],
   );
 
-  const buyerName = useMemo(() => {
-    const fn = data?.order?.customer_first_name || "";
-    const ln = data?.order?.customer_last_name || "";
-    const full = `${fn} ${ln}`.trim();
-    return full || null;
-  }, [data]);
 
   const hasTickets = (data?.tickets || []).length > 0;
 
@@ -313,12 +307,6 @@ export default function SuccessClient() {
                 <p className="text-[#B39DDB] mt-2">{subtitleText}</p>
 
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  {buyerName ? (
-                    <span className="px-2 py-1 rounded-md border border-[#432C7A] text-[#B39DDB] bg-[#24123E]">
-                      {buyerName}
-                    </span>
-                  ) : null}
-
                   {data?.order?.customer_email ? (
                     <span className="px-2 py-1 rounded-md border border-[#432C7A] text-[#B39DDB] bg-[#24123E]">
                       {data.order.customer_email}
@@ -331,28 +319,7 @@ export default function SuccessClient() {
                       Email trimis
                     </span>
                   ) : null}
-
-                  {/* low-key token */}
-                  {data?.order?.public_token || tokenFromQuery ? (
-                    <span className="px-2 py-1 rounded-md border border-[#432C7A] text-[#B39DDB] bg-[#24123E]">
-                      Token:{" "}
-                      {(data?.order?.public_token || tokenFromQuery) as string}
-                    </span>
-                  ) : null}
                 </div>
-
-                {/* low-key session id */}
-                {sessionId ? (
-                  <details className="mt-3 text-xs text-[#B39DDB]">
-                    <summary className="cursor-pointer select-none hover:text-white transition-colors">
-                      Detalii tehnice
-                    </summary>
-                    <div className="mt-2 break-all">
-                      Session ID Stripe:{" "}
-                      <span className="text-slate-200">{sessionId}</span>
-                    </div>
-                  </details>
-                ) : null}
               </div>
             </div>
           </section>
