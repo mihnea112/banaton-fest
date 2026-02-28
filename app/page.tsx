@@ -533,43 +533,6 @@ export default function Home() {
             </div>
           </div>
         </section>
-        {/* Quick Links (SEO) */}
-        <section className="w-full max-w-6xl px-4 md:px-10 pb-16">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 md:p-8">
-            <h2 className="text-2xl md:text-3xl font-black text-white">Informații rapide</h2>
-            <p className="text-gray-300 mt-2">
-              Bilete, VIP și programul pe zile — totul într-un singur loc.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/tickets"
-                className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-accent-cyan text-background-dark font-bold hover:bg-white transition-colors"
-              >
-                <span className="material-symbols-outlined">confirmation_number</span>
-                Bilete
-              </Link>
-              <Link
-                href="/vip"
-                className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-white/5 text-white border border-white/15 font-bold hover:bg-white/10 hover:border-accent-gold/50 transition-colors"
-              >
-                <span className="material-symbols-outlined">table_restaurant</span>
-                VIP
-              </Link>
-              <a
-                href="#program"
-                className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-white/5 text-white border border-white/15 font-bold hover:bg-white/10 hover:border-accent-gold/50 transition-colors"
-              >
-                <span className="material-symbols-outlined">event</span>
-                Program
-              </a>
-            </div>
-            <div className="mt-6 rounded-xl border border-white/10 bg-[#150b1f]/70 p-4">
-              <p className="text-sm text-gray-300">
-                Pentru întrebări: <span className="font-semibold text-white">office.banaton@gmail.com</span>
-              </p>
-            </div>
-          </div>
-        </section>
       </main>
       </div>
     </>
