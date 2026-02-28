@@ -1,4 +1,6 @@
 "use client";
+import Head from "next/head";
+import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -26,7 +28,7 @@ export default function Home() {
     {
       id: "vineri" as const,
       tabLabel: "Vineri",
-      tabDate: "29 Mai",
+      tabDate: "29.05",
       badge: "Ziua 1 • Vineri",
       time: "18:00",
       stage: "Main Stage",
@@ -41,7 +43,7 @@ export default function Home() {
     {
       id: "sambata" as const,
       tabLabel: "Sâmbătă",
-      tabDate: "30 Mai",
+      tabDate: "30.05",
       badge: "Ziua 2 • Sâmbătă",
       time: "18:00",
       stage: "Main Stage",
@@ -57,7 +59,7 @@ export default function Home() {
     {
       id: "duminica" as const,
       tabLabel: "Duminică",
-      tabDate: "31 Mai",
+      tabDate: "31.05",
       badge: "Ziua 3 • Duminică",
       time: "18:00",
       stage: "Main Stage",
@@ -73,7 +75,7 @@ export default function Home() {
     {
       id: "luni" as const,
       tabLabel: "Luni",
-      tabDate: "01 Iunie",
+      tabDate: "01.06",
       badge: "Ziua 4 • Luni",
       time: "17:00",
       stage: "Main Stage",
@@ -98,8 +100,103 @@ export default function Home() {
     return !!programImageErrors[activeProgram.id];
   }, [activeProgram, programImageErrors]);
 
+  // SEO constants and JSON-LD objects
+  const SITE_URL = "https://banaton-fest.vercel.app";
+  const TITLE = "Banaton Fest 2026 – Festival în Timișoara (29.05–01.06.2026)";
+  const DESCRIPTION =
+    "Banaton Fest 2026: 4 zile în centrul Timișoarei – Awards, concert exclusiv CECA, folclor simfonic și rock balcanic. Bilete Acces General & VIP.";
+  const CANONICAL = `${SITE_URL}/`;
+  const OG_IMAGE = `${SITE_URL}/images/logo.png`;
+
+  const eventJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: "Banaton Fest 2026",
+    description: DESCRIPTION,
+    startDate: "2026-05-29T18:00:00+03:00",
+    endDate: "2026-06-01T23:00:00+03:00",
+    eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+    eventStatus: "https://schema.org/EventScheduled",
+    url: SITE_URL,
+    location: {
+      "@type": "Place",
+      name: "Bulevardul Republicii",
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: "Bulevardul Republicii",
+        addressLocality: "Timișoara",
+        addressCountry: "RO",
+      },
+    },
+    organizer: {
+      "@type": "Organization",
+      name: "Banaton Fest",
+      url: SITE_URL,
+    },
+    image: [OG_IMAGE],
+  };
+
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: [
+      {
+        "@type": "Question",
+        name: "Unde are loc Banaton Fest 2026?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Evenimentul are loc în Timișoara, pe Bulevardul Republicii (zona centrală).",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Care sunt datele festivalului?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "29.05–01.06.2026 (Vineri–Luni).",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Cum funcționează VIP?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Biletele VIP necesită selectarea mesei în pasul VIP, înainte de checkout.",
+        },
+      },
+    ],
+  };
+
   return (
-    <div className="relative flex min-h-screen w-full flex-col bg-[#120818] text-white font-display overflow-x-hidden selection:bg-accent-cyan selection:text-black">
+    <>
+      <Head>
+        <title>{TITLE}</title>
+        <meta name="description" content={DESCRIPTION} />
+        <link rel="canonical" href={CANONICAL} />
+
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="Banaton Fest" />
+        <meta property="og:title" content={TITLE} />
+        <meta property="og:description" content={DESCRIPTION} />
+        <meta property="og:url" content={SITE_URL} />
+        <meta property="og:image" content={OG_IMAGE} />
+
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={TITLE} />
+        <meta name="twitter:description" content={DESCRIPTION} />
+        <meta name="twitter:image" content={OG_IMAGE} />
+      </Head>
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(eventJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
+
+      <div className="relative flex min-h-screen w-full flex-col bg-[#120818] text-white font-display overflow-x-hidden selection:bg-accent-cyan selection:text-black">
       {/* Background Elements */}
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-primary/30 rounded-full blur-[120px]"></div>
@@ -120,7 +217,7 @@ export default function Home() {
             <div className="absolute inset-0 bg-gradient-to-t from-background-dark via-transparent to-transparent opacity-90"></div>
             <div className="relative z-10 flex flex-col gap-6 max-w-3xl items-center">
               <span className="inline-block px-4 py-1.5 rounded-full bg-accent-gold/20 text-accent-gold text-xs font-bold uppercase tracking-wider border border-accent-gold/30 backdrop-blur-sm shadow-[0_0_10px_rgba(255,215,0,0.2)]">
-                29.05 - 01.06.2026 • Centrul Timișoara
+                29.05–01.06.2026 • Timișoara • Bulevardul Republicii
               </span>
               <h1 className="text-white text-5xl md:text-7xl font-black leading-tight tracking-tight drop-shadow-xl">
                 Banaton{" "}
@@ -295,12 +392,13 @@ export default function Home() {
                   }
                 >
                   {!activeProgramImageFailed ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       src={activeProgram.artistImage}
                       alt={activeProgram.title}
+                      fill
+                      sizes="(max-width: 768px) 320px, 480px"
                       className={
-                        "block h-full w-full " +
+                        "" +
                         (activeProgram.imageFit === "contain"
                           ? "object-contain bg-[#120818]"
                           : "object-cover object-center")
@@ -435,7 +533,45 @@ export default function Home() {
             </div>
           </div>
         </section>
+        {/* Quick Links (SEO) */}
+        <section className="w-full max-w-6xl px-4 md:px-10 pb-16">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 md:p-8">
+            <h2 className="text-2xl md:text-3xl font-black text-white">Informații rapide</h2>
+            <p className="text-gray-300 mt-2">
+              Bilete, VIP și programul pe zile — totul într-un singur loc.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/tickets"
+                className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-accent-cyan text-background-dark font-bold hover:bg-white transition-colors"
+              >
+                <span className="material-symbols-outlined">confirmation_number</span>
+                Bilete
+              </Link>
+              <Link
+                href="/vip"
+                className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-white/5 text-white border border-white/15 font-bold hover:bg-white/10 hover:border-accent-gold/50 transition-colors"
+              >
+                <span className="material-symbols-outlined">table_restaurant</span>
+                VIP
+              </Link>
+              <a
+                href="#program"
+                className="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-white/5 text-white border border-white/15 font-bold hover:bg-white/10 hover:border-accent-gold/50 transition-colors"
+              >
+                <span className="material-symbols-outlined">event</span>
+                Program
+              </a>
+            </div>
+            <div className="mt-6 rounded-xl border border-white/10 bg-[#150b1f]/70 p-4">
+              <p className="text-sm text-gray-300">
+                Pentru întrebări: <span className="font-semibold text-white">office.banaton@gmail.com</span>
+              </p>
+            </div>
+          </div>
+        </section>
       </main>
-    </div>
+      </div>
+    </>
   );
 }

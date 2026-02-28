@@ -1,6 +1,18 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import VipClient from "./VipClient";
 
+export const metadata: Metadata = {
+  title: "VIP",
+  description: "VIP Banaton Fest 2026 — alege masa și beneficii VIP.",
+  alternates: {
+    canonical: "https://banaton-fest.vercel.app/vip",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+};
 export default function VipPage() {
   return (
     <Suspense
