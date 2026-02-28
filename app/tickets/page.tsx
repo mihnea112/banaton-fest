@@ -48,7 +48,7 @@ type ApiErrorLike = {
 };
 
 const PRODUCTS: TicketProduct[] = [
-  // General Access
+  // Fan Pit
   {
     id: "gen-4day",
     category: "general",
@@ -56,7 +56,7 @@ const PRODUCTS: TicketProduct[] = [
     durationLabel: "4 Zile",
     price: 120,
     description:
-      "Acces general pentru toate cele 4 zile ale festivalului (29.05–01.06.2026)",
+      "Acces Fan Pit pentru toate cele 4 zile ale festivalului (29.05–01.06.2026)",
   },
   {
     id: "gen-3day",
@@ -558,7 +558,7 @@ export default function Tickets() {
               </p>
             </div>
 
-            {/* General Access Section */}
+            {/* Fan Pit Section */}
             <section>
               <div className="flex items-center gap-3 mb-6">
                 <div className="size-10 rounded-xl bg-brand-surface border border-white/10 flex items-center justify-center shadow-lg">
@@ -567,7 +567,7 @@ export default function Tickets() {
                   </span>
                 </div>
                 <h2 className="text-2xl font-bold tracking-tight text-white">
-                  Acces General
+                  Fan Pit
                 </h2>
               </div>
 
@@ -609,8 +609,7 @@ export default function Tickets() {
                   Informație importantă
                 </p>
                 <p className="text-sm text-brand-text">
-                  Prețurile includ toate taxele. Copiii sub 12 ani au acces
-                  gratuit însoțiți de un adult plătitor.
+                  Copiii sub 12 ani au acces gratuit însoțiți de un adult plătitor.
                 </p>
               </div>
             </div>
@@ -671,7 +670,7 @@ export default function Tickets() {
                                 <p className="text-xs text-brand-text uppercase font-semibold">
                                   {product.category === "vip"
                                     ? "VIP"
-                                    : "General"}
+                                    : "Fan Pit"}
                                 </p>
                               </div>
                               <p className="font-bold text-white text-sm">
@@ -743,14 +742,7 @@ export default function Tickets() {
                     </span>
                   </button>
                   <p className="text-center text-xs text-brand-text/60 mt-4">
-                    Prin continuarea comenzii accepți{" "}
-                    <a
-                      className="underline hover:text-white transition-colors"
-                      href="#"
-                    >
-                      Termenii și Condiții
-                    </a>
-                    .
+                    După finalizarea plății vei primi biletele pe email.
                   </p>
                 </div>
               </div>

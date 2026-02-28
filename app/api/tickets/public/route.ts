@@ -153,9 +153,9 @@ function buildTicketsEmailHtml(params: {
     .map((it) => {
       const title =
         it.product_name_snapshot ||
-        (it.category === "vip" ? "Bilet VIP" : "Bilet Acces General");
+        (it.category === "vip" ? "Bilet VIP" : "Bilet Fan Pit");
       const variant = it.variant_label_snapshot ? ` · ${it.variant_label_snapshot}` : "";
-      const days = it.canonical_day_set ? ` · Zile: ${it.canonical_day_set}` : "";
+      const days = it.canonical_day_set ? ` · Zile: ${it.canonical_day_set.replaceAll(',', ', ')}` : "";
       const qty = typeof it.qty === "number" && it.qty > 0 ? ` (x${it.qty})` : "";
       return `<li style="margin:6px 0;">${escapeHtml(title)}${escapeHtml(variant)}${escapeHtml(days)}${escapeHtml(qty)}</li>`;
     })
@@ -174,7 +174,7 @@ function buildTicketsEmailHtml(params: {
     <div style="max-width:640px; margin:0 auto; border:1px solid rgba(124,77,255,0.35); background:rgba(45,27,78,0.55); border-radius:16px; overflow:hidden;">
       <div style="padding:18px 20px; background:rgba(36,18,62,0.85); border-bottom:1px solid rgba(124,77,255,0.35);">
         <div style="font-weight:800; font-size:18px;">Banaton Fest 2026 — Confirmare plată</div>
-        <div style="margin-top:6px; color:#b39ddb; font-size:13px;">Token comandă: <b>${escapeHtml(publicToken)}</b></div>
+        <div style="margin-top:6px; color:#b39ddb; font-size:13px;">Cod comandă: <b>${escapeHtml(publicToken)}</b></div>
       </div>
 
       <div style="padding:20px;">

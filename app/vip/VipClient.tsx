@@ -76,6 +76,18 @@ function normalizeDayCodeLower(
   return null;
 }
 
+function displayCategoryLabel(category: ApiOrderItem["category"] | undefined) {
+  return category === "vip" ? "VIP" : "Fan Pit";
+}
+
+function normalizeTicketTitle(item: ApiOrderItem) {
+  const raw = item.name || item.label || item.productCode || "Bilet";
+  // Replace legacy UI wording everywhere
+  return String(raw)
+    .replace(/Acces\s+General/gi, "Fan Pit")
+    .replace(/General\s+Access/gi, "Fan Pit");
+}
+
 export default function VipClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1124,8 +1136,8 @@ export default function VipClient() {
                           item.line_total ??
                           quantity * unitPrice,
                       );
-                      const title =
-                        item.name || item.label || item.productCode || "Bilet";
+                      const title = normalizeTicketTitle(item);
+                      const categoryLabel = displayCategoryLabel(item.category);
 
                       return (
                         <div
@@ -1136,7 +1148,7 @@ export default function VipClient() {
                         >
                           <div>
                             <p className="text-white text-sm font-semibold">
-                              {title}
+                              {categoryLabel} - {title}
                             </p>
                             {item.variantLabel && (
                               <p className="text-indigo-200 text-xs">

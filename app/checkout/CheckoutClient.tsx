@@ -65,6 +65,19 @@ const PUBLIC_TOKEN_STORAGE_KEY = "banatonFestPublicToken";
 // (optional fallback only)
 const VIP_ALLOCATIONS_STORAGE_KEY = "banatonFestVipAllocations";
 
+function displayCategoryLabel(category: DraftOrderItem["category"]) {
+  // IMPORTANT: "general" is named "Fan Pit" across the site.
+  return category === "vip" ? "VIP" : "Fan Pit";
+}
+
+function normalizeTicketTitle(title: string) {
+  // Defensive: old API / seed data might still include these labels
+  return String(title || "")
+    .replace(/Acces\s+General/gi, "Fan Pit")
+    .replace(/General\s+Access/gi, "Fan Pit")
+    .trim();
+}
+
 function formatLei(value: number) {
   const safe = Number.isFinite(value) ? value : 0;
   return `${new Intl.NumberFormat("ro-RO", {
@@ -769,7 +782,13 @@ export default function CheckoutClient() {
     : "Plătește";
 
   const isBillingFormComplete = useMemo(() => {
-    return billingEmail.trim().length > 0 && billingPhone.trim().length > 0;
+    const email = billingEmail.trim();
+    const phone = billingPhone.trim();
+
+    // Email is mandatory + must look like an email.
+    const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+    return emailLooksValid && phone.length > 0;
   }, [billingEmail, billingPhone]);
 
   const canProceedToPayment =
@@ -837,6 +856,23 @@ export default function CheckoutClient() {
     setCheckoutError(null);
     setIsCreatingCheckout(true);
 
+    // Guard: enforce valid email and phone even if button logic changes.
+    const email = billingEmail.trim();
+    const phone = billingPhone.trim();
+    const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+    if (!emailLooksValid) {
+      setCheckoutError("Te rugăm să introduci o adresă de email validă.");
+      setIsCreatingCheckout(false);
+      return;
+    }
+
+    if (!phone) {
+      setCheckoutError("Te rugăm să introduci un număr de telefon.");
+      setIsCreatingCheckout(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/stripe/checkout-session", {
         method: "POST",
@@ -848,13 +884,13 @@ export default function CheckoutClient() {
           orderToken: publicOrderToken,
           token: publicOrderToken,
           publicToken: publicOrderToken,
-          email: billingEmail.trim(),
-          customer_email: billingEmail.trim(),
-          phone: billingPhone.trim(),
-          customer_phone: billingPhone.trim(),
+          email: email,
+          customer_email: email,
+          phone: phone,
+          customer_phone: phone,
           customer: {
-            email: billingEmail.trim(),
-            phone: billingPhone.trim(),
+            email: email,
+            phone: phone,
           },
         }),
       });
@@ -991,6 +1027,9 @@ export default function CheckoutClient() {
                       value={billingEmail}
                       onChange={(e) => setBillingEmail(e.target.value)}
                       disabled={isPaid}
+                      required
+                      autoComplete="email"
+                      inputMode="email"
                     />
                   </div>
                   <p className="text-xs text-[#B39DDB] mt-0.5 flex items-center gap-1">
@@ -1088,8 +1127,10 @@ export default function CheckoutClient() {
                               ? savedLineTotal
                               : safeQty * fallbackUnitPrice;
 
-                          const displayName =
+                          const displayNameRaw =
                             item.name || item.label || "Bilet";
+                          const displayName = normalizeTicketTitle(displayNameRaw);
+                          const categoryLabel = displayCategoryLabel(item.category);
 
                           return (
                             <div
@@ -1112,10 +1153,7 @@ export default function CheckoutClient() {
                               <div className="flex flex-col grow">
                                 <div className="flex justify-between items-start gap-2">
                                   <span className="text-white font-bold text-sm">
-                                    {item.category === "vip"
-                                      ? "VIP"
-                                      : "Acces General"}{" "}
-                                    - {displayName}
+                                    {categoryLabel} - {displayName}
                                   </span>
                                   <span className="text-[#FFD700] font-bold text-sm whitespace-nowrap">
                                     {formatLei(lineTotal)}
