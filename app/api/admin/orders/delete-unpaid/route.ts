@@ -68,14 +68,13 @@ export async function POST(): Promise<NextResponse<JsonOk | JsonErr>> {
     }
 
     /**
-     * "unpaid" = payment_status != 'paid' OR null
-     * (we also exclude status='paid' just in case)
+     * STRICT: delete ONLY orders where payment_status === 'unpaid'
+     * (does NOT delete pending / processing / failed / etc.)
      */
     const { data: unpaidOrders, error: listErr } = await supabase
       .from("orders")
       .select("id, payment_status, status")
-      .or("payment_status.is.null,payment_status.neq.paid")
-      .neq("status", "paid")
+      .eq("payment_status", "unpaid")
       .limit(5000);
 
     if (listErr) throw listErr;
