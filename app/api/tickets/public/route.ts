@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -248,6 +249,24 @@ function jsonError(message: string, status = 400) {
   return NextResponse.json({ ok: false, error: { message } }, { status });
 }
 
+async function requireAdminAuth() {
+  // Reuse the same cookie your middleware uses to protect /admin.
+  // If your cookie name differs, change it here.
+  const c = await cookies();
+  const admin = c.get("banaton_admin")?.value;
+  if (!admin) {
+    return NextResponse.json(
+      { ok: false, error: { message: "Unauthorized" } },
+      { status: 401 },
+    );
+  }
+  return null;
+}
+
+function isEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -319,7 +338,7 @@ export async function GET(req: Request) {
         "id, category, quantity, unit_price_ron, line_total_ron, product_name_snapshot, variant_label_snapshot, duration_type, canonical_day_set",
       )
       .eq("order_id", order.id);
-
+    const origin = new URL(req.url).origin;
     // 2.5) Send confirmation email (ONLY order form email, not Stripe) — best-effort & idempotent
     // IMPORTANT: This endpoint may be polled. Use an atomic DB guard to ensure we send only once.
     const orderEmail = asString((order as any).customer_email);
@@ -387,7 +406,6 @@ export async function GET(req: Request) {
           // Already sent by a previous request
           console.log("[tickets email] already sent, skip", { orderId: order.id });
         } else {
-          const origin = new URL(req.url).origin;
           const viewUrl = `${origin}/success?order=${encodeURIComponent(order.public_token)}`;
           const pdfUrl = `${origin}/api/tickets/pdf?token=${encodeURIComponent(order.public_token)}`;
 
@@ -493,6 +511,165 @@ export async function GET(req: Request) {
     });
   } catch (e) {
     console.error("[GET /api/tickets/public] error", e);
+    const msg = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json(
+      { ok: false, error: { message: msg } },
+      { status: 500 },
+    );
+  }
+}
+
+// Admin-only: force resend tickets email and/or overwrite the recipient email.
+// This prevents breaking the working public GET flow.
+export async function POST(req: Request) {
+  const unauthorized = await requireAdminAuth();
+  if (unauthorized) return unauthorized;
+
+  try {
+    const url = new URL(req.url);
+
+    const body = (await req.json().catch(() => ({}))) as {
+      token?: string;
+      publicToken?: string;
+      orderToken?: string;
+      email?: string;
+    };
+
+    const token =
+      asString(url.searchParams.get("token")) ||
+      asString(body.token) ||
+      asString(body.publicToken) ||
+      asString(body.orderToken);
+
+    if (!token) return jsonError("Missing token", 400);
+
+    const overrideEmail = asString(body.email);
+    if (overrideEmail && !isEmail(overrideEmail)) {
+      return jsonError("Invalid email", 400);
+    }
+
+    // 1) Load order
+    const { data: order, error: orderErr } = await supabase
+      .from("orders")
+      .select(
+        "id, public_token, status, payment_status, currency, total_ron, customer_first_name, customer_last_name, customer_email, tickets_email_sent_at",
+      )
+      .eq("public_token", token)
+      .maybeSingle();
+
+    if (orderErr) throw orderErr;
+    if (!order) return jsonError("Order not found", 404);
+
+    const status = String(order.status ?? "").toLowerCase();
+    const payStatus = String(order.payment_status ?? "").toLowerCase();
+    const isPaid = status === "paid" || payStatus === "paid";
+
+    if (!isPaid) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: { message: "Order is not paid" },
+        },
+        { status: 400 },
+      );
+    }
+
+    // 2) Optionally overwrite recipient email + reset send flag so we can resend safely
+    if (overrideEmail) {
+      const { error: updErr } = await supabase
+        .from("orders")
+        .update({
+          customer_email: overrideEmail,
+          tickets_email_sent_at: null,
+          updated_at: nowIso(),
+        })
+        .eq("id", order.id);
+
+      if (updErr) throw updErr;
+      (order as any).customer_email = overrideEmail;
+      (order as any).tickets_email_sent_at = null;
+    } else {
+      // Force resend without changing email
+      const { error: resetErr } = await supabase
+        .from("orders")
+        .update({ tickets_email_sent_at: null, updated_at: nowIso() })
+        .eq("id", order.id);
+      if (resetErr) throw resetErr;
+      (order as any).tickets_email_sent_at = null;
+    }
+
+    const orderEmail = asString((order as any).customer_email);
+    if (!orderEmail) return jsonError("Order has no customer_email", 400);
+
+    // 3) Ensure tickets exist (issue if missing)
+    const attendeeName = [order.customer_first_name, order.customer_last_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    await issueTicketsIfMissing({
+      orderId: order.id,
+      publicToken: order.public_token,
+      attendeeName: attendeeName || null,
+    });
+
+    // 4) Load tickets + items for email body
+    const { data: tickets, error: tErr } = await supabase
+      .from("issued_tickets")
+      .select("ticket_number, qr_code_text")
+      .eq("order_id", order.id)
+      .order("ticket_number", { ascending: true });
+
+    if (tErr) throw tErr;
+
+    const { data: itemsRaw } = await supabase
+      .from("order_items")
+      .select("category, quantity, product_name_snapshot, variant_label_snapshot, canonical_day_set")
+      .eq("order_id", order.id);
+
+    const origin = new URL(req.url).origin;
+    const viewUrl = `${origin}/success?order=${encodeURIComponent(order.public_token)}`;
+    const pdfUrl = `${origin}/api/tickets/pdf?token=${encodeURIComponent(order.public_token)}`;
+
+    // 5) Atomic claim to avoid duplicate sends in case admin double-clicks
+    const claimedAt = nowIso();
+    const { data: claimRow, error: claimErr } = await supabase
+      .from("orders")
+      .update({ tickets_email_sent_at: claimedAt, updated_at: nowIso() })
+      .eq("id", order.id)
+      .is("tickets_email_sent_at", null)
+      .select("id")
+      .maybeSingle();
+
+    if (claimErr) throw claimErr;
+    if (!claimRow) {
+      return NextResponse.json({ ok: true, already_sent: true });
+    }
+
+    const html = buildTicketsEmailHtml({
+      attendeeName: attendeeName || null,
+      publicToken: order.public_token,
+      tickets: (tickets || []) as any,
+      items: (itemsRaw || []).map((it: any) => ({
+        product_name_snapshot: it.product_name_snapshot ?? null,
+        variant_label_snapshot: it.variant_label_snapshot ?? null,
+        category: it.category ?? null,
+        qty: it.quantity ?? null,
+        canonical_day_set: it.canonical_day_set ?? null,
+      })),
+      viewUrl,
+      pdfUrl,
+    });
+
+    await sendTicketsEmail({
+      to: orderEmail,
+      subject: "Banaton Fest 2026 — biletele tale (plată confirmată)",
+      html,
+    });
+
+    return NextResponse.json({ ok: true, sent: true });
+  } catch (e) {
+    console.error("[POST /api/tickets/public] error", e);
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
       { ok: false, error: { message: msg } },
