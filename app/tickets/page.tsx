@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -9,7 +9,193 @@ function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
+
 type TicketCategory = "general" | "vip";
+
+type DayCodeLower = "fri" | "sat" | "sun" | "mon";
+
+type AvailabilityByDay = Partial<Record<DayCodeLower, number>>;
+
+// --- Fan Pit package availability ---
+type FanPitPackageKey =
+  | "FANPIT_2DAY_FRI_SUN"
+  | "FANPIT_2DAY_FRI_MON"
+  | "FANPIT_2DAY_SUN_MON"
+  | "FANPIT_3DAY_FRI_SUN_MON"
+  | "FANPIT_4DAY_ALL";
+
+type PackageAvailability = Partial<Record<FanPitPackageKey, number>>;
+
+// Accept many possible shapes for package-level availability.
+function normalizePackageAvailabilityPayload(payload: unknown): PackageAvailability {
+  // Accepts: { byPackage: { ... } } or { by_package: { ... } } or { packages: { ... } } etc.
+  if (!payload || typeof payload !== "object") return {};
+  const root = payload as Record<string, any>;
+  const candidate =
+    root.byPackage ??
+    root.by_package ??
+    root.packages ??
+    root.availabilityByPackage ??
+    root.data?.byPackage ??
+    root.data?.by_package ??
+    root.data?.packages ??
+    root.data?.availabilityByPackage ??
+    root.data?.availability_by_package ??
+    root.data ??
+    root;
+
+  const keys: FanPitPackageKey[] = [
+    "FANPIT_2DAY_FRI_SUN",
+    "FANPIT_2DAY_FRI_MON",
+    "FANPIT_2DAY_SUN_MON",
+    "FANPIT_3DAY_FRI_SUN_MON",
+    "FANPIT_4DAY_ALL",
+  ];
+  const out: PackageAvailability = {};
+  if (candidate && typeof candidate === "object") {
+    for (const k of keys) {
+      let v = candidate[k];
+      if (typeof v === "number" || typeof v === "string") {
+        out[k] = clampInt(v, 0);
+        continue;
+      }
+      if (v && typeof v === "object") {
+        if ("remaining" in v) {
+          out[k] = clampInt((v as any).remaining, 0);
+          continue;
+        }
+        if ("free" in v) {
+          out[k] = clampInt((v as any).free, 0);
+          continue;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// Derive package-level availability from per-day availability if backend does not provide it.
+function derivePackageAvailabilityFromDays(days: AvailabilityByDay): PackageAvailability {
+  // Conservative fallback: a package can only be sold if ALL included days have capacity.
+  // So remaining = min(remaining(day_i)). If a day is missing, we omit that package.
+  const get = (d: DayCodeLower) => (typeof days[d] === "number" ? (days[d] as number) : null);
+
+  const min2 = (a: number | null, b: number | null) => {
+    if (a === null || b === null) return null;
+    return Math.min(a, b);
+  };
+
+  const min3 = (a: number | null, b: number | null, c: number | null) => {
+    if (a === null || b === null || c === null) return null;
+    return Math.min(a, b, c);
+  };
+
+  const min4 = (a: number | null, b: number | null, c: number | null, d: number | null) => {
+    if (a === null || b === null || c === null || d === null) return null;
+    return Math.min(a, b, c, d);
+  };
+
+  const fri = get("fri");
+  const sat = get("sat");
+  const sun = get("sun");
+  const mon = get("mon");
+
+  const out: PackageAvailability = {};
+
+  const v2_fs = min2(fri, sun);
+  const v2_fm = min2(fri, mon);
+  const v2_sm = min2(sun, mon);
+  const v3_fsm = min3(fri, sun, mon);
+  const v4_all = min4(fri, sat, sun, mon);
+
+  if (typeof v2_fs === "number") out.FANPIT_2DAY_FRI_SUN = v2_fs;
+  if (typeof v2_fm === "number") out.FANPIT_2DAY_FRI_MON = v2_fm;
+  if (typeof v2_sm === "number") out.FANPIT_2DAY_SUN_MON = v2_sm;
+  if (typeof v3_fsm === "number") out.FANPIT_3DAY_FRI_SUN_MON = v3_fsm;
+  if (typeof v4_all === "number") out.FANPIT_4DAY_ALL = v4_all;
+
+  return out;
+}
+
+function clampInt(n: unknown, fallback = 0) {
+  const x = Math.floor(Number(n));
+  return Number.isFinite(x) ? x : fallback;
+}
+
+function parseDayLower(v: unknown): DayCodeLower | null {
+  const s = String(v || "").trim().toLowerCase();
+  if (s === "fri" || s === "sat" || s === "sun" || s === "mon") return s;
+  return null;
+}
+
+function parseDayUpperToLower(v: unknown): DayCodeLower | null {
+  const s = String(v || "").trim().toUpperCase();
+  if (s === "FRI") return "fri";
+  if (s === "SAT") return "sat";
+  if (s === "SUN") return "sun";
+  if (s === "MON") return "mon";
+  return null;
+}
+
+function normalizeAvailabilityPayload(payload: unknown): AvailabilityByDay {
+  // Accept many possible shapes so UI never hard-crashes.
+  // Supported examples:
+  // { ok:true, availability:{ fri:123, sat:0, ... } }
+  // { ok:true, data:{ FRI:{ remaining:123 }, SAT:{ remaining:0 } } }
+  // { fri:123, sat:0 }
+  if (!payload || typeof payload !== "object") return {};
+  const root = payload as Record<string, any>;
+
+  const candidate =
+    root.byDay ??
+    root.by_day ??
+    root.availability ??
+    root.remaining ??
+    root.days ??
+    root.data?.byDay ??
+    root.data?.by_day ??
+    root.data?.availability ??
+    root.data?.remaining ??
+    root.data?.days ??
+    root.data ??
+    root;
+
+  const out: AvailabilityByDay = {};
+
+  if (candidate && typeof candidate === "object") {
+    for (const [k, v] of Object.entries(candidate)) {
+      const lower = parseDayLower(k) ?? parseDayUpperToLower(k);
+      if (!lower) continue;
+
+      if (typeof v === "number" || typeof v === "string") {
+        out[lower] = clampInt(v, 0);
+        continue;
+      }
+
+      if (v && typeof v === "object") {
+        // common: { remaining: 123 }
+        if ("remaining" in v) {
+          out[lower] = clampInt((v as any).remaining, 0);
+          continue;
+        }
+        // or { free: 123 }
+        if ("free" in v) {
+          out[lower] = clampInt((v as any).free, 0);
+          continue;
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+function dayLabelRo(day: DayCodeLower) {
+  if (day === "fri") return "Vineri";
+  if (day === "sat") return "Sâmbătă";
+  if (day === "sun") return "Duminică";
+  return "Luni";
+}
 
 interface ProductVariant {
   id: string;
@@ -123,11 +309,107 @@ const PRODUCTS: TicketProduct[] = [
 export default function Tickets() {
   const router = useRouter();
   const [cart, setCart] = useState<Record<string, number>>({});
-  const [expandedProducts, setExpandedProducts] = useState<
-    Record<string, boolean>
-  >({});
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Fan Pit availability (remaining tickets) per day
+  const [fanPitAvailability, setFanPitAvailability] = useState<AvailabilityByDay>({});
+  const [fanPitPackageAvailability, setFanPitPackageAvailability] = useState<PackageAvailability>({});
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAvailability() {
+      setIsLoadingAvailability(true);
+      try {
+        // This endpoint should return remaining tickets for Fan Pit per day.
+        // If it doesn't exist yet, UI will simply hide the numbers.
+        const res = await fetch("/api/fanpit/availability?days=fri,sat,sun,mon", {
+          method: "GET",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+
+        const json = (await res.json().catch(() => ({}))) as unknown;
+        if (!res.ok) {
+          // Don’t hard error; just keep empty.
+          if (!cancelled) {
+            setFanPitAvailability({});
+            setFanPitPackageAvailability({});
+          }
+          return;
+        }
+
+        const normalizedDays = normalizeAvailabilityPayload(json);
+        const normalizedPackagesFromApi = normalizePackageAvailabilityPayload(json);
+
+        // If backend doesn't return packages yet, derive them from day remaining.
+        const normalizedPackages =
+          Object.keys(normalizedPackagesFromApi).length > 0
+            ? normalizedPackagesFromApi
+            : derivePackageAvailabilityFromDays(normalizedDays);
+
+        if (!cancelled) {
+          setFanPitAvailability(normalizedDays);
+          setFanPitPackageAvailability(normalizedPackages);
+        }
+      } catch {
+        if (!cancelled) {
+          setFanPitAvailability({});
+          setFanPitPackageAvailability({});
+        }
+      } finally {
+        if (!cancelled) setIsLoadingAvailability(false);
+      }
+    }
+
+    void loadAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const formatAvailability = (day: DayCodeLower) => {
+    const v = fanPitAvailability[day];
+    if (typeof v !== "number") return null;
+    return `${v} disponibile`;
+  };
+
+  const getRemainingForDays = (days: DayCodeLower[]) => {
+    if (!days.length) return null;
+    const nums: number[] = [];
+    for (const d of days) {
+      const v = fanPitAvailability[d];
+      if (typeof v !== "number") return null;
+      nums.push(v);
+    }
+    return nums.length ? Math.min(...nums) : null;
+  };
+
+  const formatPackAvailability = (days: DayCodeLower[]) => {
+    const n = getRemainingForDays(days);
+    if (typeof n !== "number") return null;
+    return `${n} disponibile`;
+  };
+
+  const dayFromVariantId = (variantId: string): DayCodeLower | null => {
+    // Fan Pit 1-day
+    if (variantId === "gen-1day-fri") return "fri";
+    if (variantId === "gen-1day-sat") return "sat";
+    if (variantId === "gen-1day-sun") return "sun";
+    if (variantId === "gen-1day-mon") return "mon";
+
+    // VIP 1-day (optional display, but we only show Fan Pit availability)
+    if (variantId === "vip-1day-fri") return "fri";
+    if (variantId === "vip-1day-sat") return "sat";
+    if (variantId === "vip-1day-sun") return "sun";
+    if (variantId === "vip-1day-mon") return "mon";
+
+    return null;
+  };
 
   const updateQuantity = (id: string, delta: number) => {
     setCart((prev) => {
@@ -441,12 +723,33 @@ export default function Tickets() {
                 {product.description}
               </p>
             )}
-            <div className="flex items-center gap-2 mt-1 sm:hidden">
+            <div className="flex items-center gap-2 mt-1 sm:hidden flex-wrap">
               <span className="text-accent-cyan font-bold">
                 {hasVariants
                   ? `de la ${Math.min(...product.variants!.map((v) => v.price))} RON`
                   : `${product.price} RON`}
               </span>
+
+              {/* Fan Pit availability quick hint for 1-day */}
+              {product.category === "general" && product.id === "gen-1day" && (
+                <span className="text-[11px] text-brand-text/70">
+                  {isLoadingAvailability
+                    ? "Se verifică disponibilitatea…"
+                    : Object.keys(fanPitAvailability).length
+                      ? "Disponibilitate pe zile mai jos"
+                      : ""}
+                </span>
+              )}
+              {product.category === "general" && (product.id === "gen-2day" || product.id === "gen-3day" || product.id === "gen-4day") && (() => {
+                const days = mapCartIdToDayCodes(product.id);
+                const text = formatPackAvailability(days);
+                if (!text) return null;
+                return (
+                  <span className="text-[11px] text-brand-text/70">
+                    · {text}
+                  </span>
+                );
+              })()}
             </div>
           </div>
 
@@ -456,6 +759,16 @@ export default function Tickets() {
                 ? `de la ${Math.min(...product.variants!.map((v) => v.price))} RON`
                 : `${product.price} RON`}
             </span>
+            {product.category === "general" && (product.id === "gen-2day" || product.id === "gen-3day" || product.id === "gen-4day") && (() => {
+              const days = mapCartIdToDayCodes(product.id);
+              const text = formatPackAvailability(days);
+              if (!text) return null;
+              return (
+                <span className="hidden sm:block text-[12px] text-brand-text/70">
+                  {text}
+                </span>
+              );
+            })()}
 
             {hasVariants ? (
               <div className="flex items-center gap-2">
@@ -490,6 +803,11 @@ export default function Tickets() {
             <div className="p-4 grid gap-3">
               <p className="text-sm text-brand-text mb-1 font-medium">
                 Selectează perioada:
+                {product.category === "general" && product.id === "gen-1day" && Object.keys(fanPitAvailability).length > 0 ? (
+                  <span className="ml-2 text-xs font-normal text-brand-text/70">
+                    (rămase: {dayLabelRo("fri")} {fanPitAvailability.fri ?? "—"}, {dayLabelRo("sat")} {fanPitAvailability.sat ?? "—"}, {dayLabelRo("sun")} {fanPitAvailability.sun ?? "—"}, {dayLabelRo("mon")} {fanPitAvailability.mon ?? "—"})
+                  </span>
+                ) : null}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {product.variants!.map((variant) => (
@@ -506,9 +824,34 @@ export default function Tickets() {
                       <span className="text-white font-medium text-sm">
                         {variant.label}
                       </span>
-                      <span className="text-accent-cyan text-xs font-bold">
-                        {variant.price} RON
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-accent-cyan text-xs font-bold">
+                          {variant.price} RON
+                        </span>
+
+                        {/* Fan Pit (general) availability per day - shown only for 1-day variants */}
+                        {product.category === "general" && product.id === "gen-1day" && (() => {
+                          const day = dayFromVariantId(variant.id);
+                          if (!day) return null;
+                          const text = formatAvailability(day);
+                          if (!text) return null;
+                          return (
+                            <span className="text-[11px] font-semibold text-brand-text/70">
+                              · {text}
+                            </span>
+                          );
+                        })()}
+                        {product.category === "general" && product.id === "gen-2day" && (() => {
+                          const days = mapCartIdToDayCodes(variant.id);
+                          const text = formatPackAvailability(days);
+                          if (!text) return null;
+                          return (
+                            <span className="text-[11px] font-semibold text-brand-text/70">
+                              · {text}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
                     {renderQuantityControls(variant.id, variant.price, true)}
                   </div>

@@ -44,6 +44,31 @@ type ResolvedLine = {
   dbDurationType?: string;
 };
 
+const FAN_PIT_CAPACITY_PER_DAY = 2000;
+
+function dayCodesToUpper(days: DayCode[]): DayCode[] {
+  return days;
+}
+
+function computeRequestedFanPitByDay(lines: NormalizedLine[]): Record<DayCode, number> {
+  const out: Record<DayCode, number> = { FRI: 0, SAT: 0, SUN: 0, MON: 0 };
+  for (const l of lines) {
+    if (l.category !== "general") continue;
+    const qty = Number.isFinite(l.qty) ? l.qty : 0;
+    if (!Number.isInteger(qty) || qty <= 0) continue;
+    for (const d of dayCodesToUpper(l.selectedDayCodes)) {
+      out[d] += qty;
+    }
+  }
+  return out;
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 function productCodeToDurationKey(productCode: ProductCode):
   | "1_day"
   | "2_day"
@@ -266,24 +291,24 @@ function computeLine(
 
   switch (productCode) {
     case "GENERAL_1_DAY": {
-      name = "Acces General - 1 zi";
+      name = "Fan Pit - 1 zi";
       durationLabel = "1 zi";
       const d = days[0];
       unitPrice = d === "SAT" ? 80 : 50;
       break;
     }
     case "GENERAL_2_DAY":
-      name = "Acces General - 2 zile";
+      name = "Fan Pit - 2 zile";
       durationLabel = "2 zile";
       unitPrice = 60;
       break;
     case "GENERAL_3_DAY":
-      name = "Acces General - 3 zile";
+      name = "Fan Pit - 3 zile";
       durationLabel = "3 zile";
       unitPrice = 80;
       break;
     case "GENERAL_4_DAY":
-      name = "Acces General - 4 zile";
+      name = "Fan Pit - 4 zile";
       durationLabel = "4 zile";
       unitPrice = 120;
       break;
@@ -474,6 +499,148 @@ export async function PUT(
 
     console.log("[order-items] normalized lines", normalizedLines);
 
+    // 3.0) Enforce Fan Pit (general) capacity per day (PAID orders only)
+    //      Efficient check: only for the days being requested in THIS payload.
+    const requestedByDay = computeRequestedFanPitByDay(normalizedLines);
+    const requestedDays = (Object.keys(requestedByDay) as DayCode[]).filter(
+      (d) => (requestedByDay[d] || 0) > 0,
+    );
+
+    if (requestedDays.length > 0) {
+      // Map requested DayCode -> event_day_id
+      const requestedEventDayIds = requestedDays
+        .map((d) => dayCodeToId.get(d))
+        .filter((x): x is string => !!x);
+
+      // If event_day_ids are missing, better fail safe than oversell.
+      if (requestedEventDayIds.length !== requestedDays.length) {
+        return jsonError(
+          "Nu pot valida disponibilitatea Fan Pit (lipsesc zile din event_days).",
+          500,
+        );
+      }
+
+      // 1) Load order_item_days for requested event days
+      const oidRes = await supabaseAdmin
+        .from("order_item_days")
+        .select("order_item_id, event_day_id")
+        .in("event_day_id", requestedEventDayIds);
+
+      if (oidRes.error) {
+        return jsonError("Eroare la citirea order_item_days (capacity check).", 500, {
+          details: oidRes.error.message,
+          code: oidRes.error.code,
+        });
+      }
+
+      const orderItemIds = Array.from(
+        new Set((oidRes.data || []).map((r) => String((r as any).order_item_id))),
+      ).filter(Boolean);
+
+      // If nothing sold yet, we can allow immediately.
+      const soldByDay: Record<DayCode, number> = { FRI: 0, SAT: 0, SUN: 0, MON: 0 };
+
+      if (orderItemIds.length > 0) {
+        // 2) Load order_items for those ids (Fan Pit only = category 'general')
+        const itemsRes = await supabaseAdmin
+          .from("order_items")
+          .select("id, order_id, quantity, category")
+          .in("id", orderItemIds)
+          .eq("category", "general");
+
+        if (itemsRes.error) {
+          return jsonError("Eroare la citirea order_items (capacity check).", 500, {
+            details: itemsRes.error.message,
+            code: itemsRes.error.code,
+          });
+        }
+
+        const qtyByItemId = new Map<string, number>();
+        const orderIdByItemId = new Map<string, string>();
+        const orderIds = new Set<string>();
+
+        for (const it of itemsRes.data || []) {
+          const id = String((it as any).id);
+          const order_id = String((it as any).order_id);
+          const q = Math.floor(Number((it as any).quantity));
+          if (!id || !order_id) continue;
+          if (!Number.isFinite(q) || q <= 0) continue;
+          qtyByItemId.set(id, q);
+          orderIdByItemId.set(id, order_id);
+          orderIds.add(order_id);
+        }
+
+        if (orderIds.size > 0) {
+          // 3) Load orders for those order_ids and keep only PAID
+          const ordersRes = await supabaseAdmin
+            .from("orders")
+            .select("id, status, payment_status")
+            .in("id", Array.from(orderIds));
+
+          if (ordersRes.error) {
+            return jsonError("Eroare la citirea orders (capacity check).", 500, {
+              details: ordersRes.error.message,
+              code: ordersRes.error.code,
+            });
+          }
+
+          const paidOrderIds = new Set<string>();
+          for (const o of ordersRes.data || []) {
+            const id = String((o as any).id);
+            const st = String((o as any).status ?? "").toLowerCase();
+            const ps = String((o as any).payment_status ?? "").toLowerCase();
+            if (st === "paid" || ps === "paid") paidOrderIds.add(id);
+          }
+
+          // 4) Sum sold seats per day (only paid orders)
+          // Build inverse map event_day_id -> DayCode
+          const eventDayIdToDayCode = new Map<string, DayCode>();
+          for (const [code, id] of dayCodeToId.entries()) {
+            eventDayIdToDayCode.set(id, code);
+          }
+
+          for (const row of oidRes.data || []) {
+            const orderItemId = String((row as any).order_item_id);
+            const eventDayId = String((row as any).event_day_id);
+            const dayCode = eventDayIdToDayCode.get(eventDayId);
+            if (!dayCode) continue;
+
+            const qty = qtyByItemId.get(orderItemId) || 0;
+            if (qty <= 0) continue;
+
+            const orderId = orderIdByItemId.get(orderItemId);
+            if (!orderId) continue;
+            if (!paidOrderIds.has(orderId)) continue;
+
+            soldByDay[dayCode] += qty;
+          }
+        }
+      }
+
+      // 5) Enforce limits
+      const exceeded: Array<{ day: DayCode; requested: number; sold: number; remaining: number }> = [];
+
+      for (const d of requestedDays) {
+        const requested = requestedByDay[d] || 0;
+        const sold = soldByDay[d] || 0;
+        const remaining = Math.max(0, FAN_PIT_CAPACITY_PER_DAY - sold);
+        if (sold + requested > FAN_PIT_CAPACITY_PER_DAY) {
+          exceeded.push({ day: d, requested, sold, remaining });
+        }
+      }
+
+      if (exceeded.length > 0) {
+        return jsonError(
+          "Limita de bilete Fan Pit pe zi a fost depășită. Redu cantitatea sau alege alte zile.",
+          409,
+          {
+            limit_per_day: FAN_PIT_CAPACITY_PER_DAY,
+            exceeded,
+          },
+        );
+      }
+    }
+
     // 3.1) Mapăm fiecare line la ticket_products.id (obligatoriu în schema ta)
     const ticketProductsRes = await supabaseAdmin
       .from("ticket_products")
@@ -558,10 +725,22 @@ export async function PUT(
     // Curățăm eventuale rezervări VIP pentru că structura biletelor s-a schimbat
     console.log("[order-items] clearing vip reservations for order", orderId);
 
-    await supabaseAdmin
-      .from("vip_table_reservation_days")
-      .delete()
+    // vip_table_reservations has order_id, vip_table_reservation_days links by vip_table_reservation_id
+    const existingVipRes = await supabaseAdmin
+      .from("vip_table_reservations")
+      .select("id")
       .eq("order_id", orderId);
+
+    if (!existingVipRes.error && (existingVipRes.data || []).length > 0) {
+      const vipResIds = (existingVipRes.data || []).map((r) => String((r as any).id)).filter(Boolean);
+      if (vipResIds.length > 0) {
+        await supabaseAdmin
+          .from("vip_table_reservation_days")
+          .delete()
+          .in("vip_table_reservation_id", vipResIds);
+      }
+    }
+
     await supabaseAdmin
       .from("vip_table_reservations")
       .delete()
