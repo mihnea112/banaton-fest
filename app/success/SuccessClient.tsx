@@ -23,11 +23,23 @@ type TicketsPublicResponse = {
     customer_email?: string | null;
   };
   tickets?: IssuedTicket[];
+  items?: Array<{
+    id: string;
+    category?: string | null;
+    qty?: number | null;
+    product_name_snapshot?: string | null;
+    variant_label_snapshot?: string | null;
+    canonical_day_set?: string | null;
+    // optional VIP allocation hints if backend ever includes them
+    vip_table_label?: string | null;
+    vip_table_id?: string | null;
+  }>;
   // alternative shapes
   data?: {
     order?: TicketsPublicResponse["order"];
     tickets?: IssuedTicket[];
     issued_tickets?: IssuedTicket[];
+    items?: TicketsPublicResponse["items"];
   };
   issued_tickets?: IssuedTicket[];
   error?: { message?: string };
@@ -81,15 +93,40 @@ function normalizeTicketsPayload(input: TicketsPublicResponse): TicketsPublicRes
     // tolerate APIs that return `data` as the tickets array
     (Array.isArray(root.data) ? (root.data as any) : undefined);
 
+  const items =
+    root.items ||
+    root.data?.items ||
+    ((root.data as any)?.items && Array.isArray((root.data as any).items)
+      ? ((root.data as any).items as any)
+      : undefined);
+
   // preserve new flags (they are already included in ...root, but ensure type)
   return {
     ...root,
     order: order || undefined,
     tickets: Array.isArray(tickets) ? tickets : [],
+    items: Array.isArray(items) ? items : [],
     tickets_ready: root.tickets_ready,
     tickets_email_sent: root.tickets_email_sent,
     tickets_email_sent_at: root.tickets_email_sent_at,
   };
+}
+
+function labelCategory(category: unknown) {
+  const c = String(category || "").toLowerCase();
+  if (c === "vip") return "VIP";
+  // IMPORTANT: General Access is called Fan Pit
+  return "Fan Pit";
+}
+
+function formatDays(canonicalDaySet: unknown) {
+  const raw = String(canonicalDaySet || "").trim();
+  if (!raw) return null;
+  return raw
+    .split(/\s*,\s*/g)
+    .filter(Boolean)
+    .map((d) => d.toUpperCase())
+    .join(", ");
 }
 
 async function fetchTicketsPublic(
@@ -254,6 +291,13 @@ export default function SuccessClient() {
     [data],
   );
 
+  const itemById = useMemo(() => {
+    const map = new Map<string, NonNullable<TicketsPublicResponse["items"]>[number]>();
+    for (const it of data?.items || []) {
+      if (it && typeof it.id === "string") map.set(it.id, it as any);
+    }
+    return map;
+  }, [data]);
 
   const hasTickets = (data?.tickets || []).length > 0;
 
@@ -386,6 +430,12 @@ export default function SuccessClient() {
                 {(data?.tickets || []).map((t) => {
                   const svg = qrSvgByTicketId[t.id];
                   const no = t.ticket_number ?? null;
+                  const item = t.order_item_id ? itemById.get(t.order_item_id) : undefined;
+                  const typeLabel = labelCategory(item?.category);
+                  const productName = asString(item?.product_name_snapshot) || null;
+                  const variant = asString(item?.variant_label_snapshot) || null;
+                  const days = formatDays(item?.canonical_day_set);
+                  const vipTable = asString((item as any)?.vip_table_label) || asString((item as any)?.vip_table_id) || null;
 
                   return (
                     <div
@@ -393,9 +443,24 @@ export default function SuccessClient() {
                       className="rounded-2xl border border-[#432C7A] bg-[#1A0B2E]/35 p-4"
                     >
                       <div className="flex items-center justify-between">
-                        <p className="text-white font-semibold text-sm">
-                          {no ? `Ticket #${no}` : "Ticket"}
-                        </p>
+                        <div className="flex flex-col">
+                          <p className="text-white font-semibold text-sm">
+                            {no ? `Ticket #${no}` : "Ticket"}
+                          </p>
+                          <p className="text-[#B39DDB] text-xs">
+                            {typeLabel}
+                            {productName ? ` — ${productName}` : ""}
+                            {variant ? ` · ${variant}` : ""}
+                          </p>
+                          {typeLabel === "VIP" && vipTable ? (
+                            <p className="text-[#FFD700] text-xs font-semibold mt-0.5">
+                              Masă: {vipTable}
+                            </p>
+                          ) : null}
+                          {days ? (
+                            <p className="text-[#B39DDB] text-[11px] mt-0.5">Zile: {days}</p>
+                          ) : null}
+                        </div>
                         <span className="text-xs px-2 py-1 rounded-md border border-[#432C7A] text-[#B39DDB] bg-[#24123E]">
                           {String(t.status || "valid")}
                         </span>

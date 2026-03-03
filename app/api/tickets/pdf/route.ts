@@ -14,7 +14,6 @@ function asString(v: unknown): string | null {
 function pdfSafeText(input: unknown): string {
   const s = typeof input === "string" ? input : String(input ?? "");
   // Remove diacritics (ăâîșț etc.) so StandardFonts (WinAnsi) can encode.
-  // Also normalize a few edge cases that might not decompose as expected.
   return s
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -26,12 +25,10 @@ function pdfSafeText(input: unknown): string {
 
 // --- PDF theme (match site vibe) ---
 const THEME = {
-  bg: rgb(0.101, 0.043, 0.180), // ~ #1A0B2E
+  bg: rgb(0.101, 0.043, 0.18), // ~ #1A0B2E
   panel: rgb(0.141, 0.071, 0.243), // ~ #24123E
-  panel2: rgb(0.176, 0.106, 0.306), // ~ #2D1B4E
   border: rgb(0.263, 0.173, 0.478), // ~ #432C7A
   cyan: rgb(0.0, 0.898, 1.0), // ~ #00E5FF
-  purple: rgb(0.486, 0.302, 1.0), // ~ #7C4DFF
   gold: rgb(1.0, 0.843, 0.0), // ~ #FFD700
   text: rgb(0.95, 0.95, 0.98),
   muted: rgb(0.702, 0.616, 0.859), // ~ #B39DDB
@@ -86,16 +83,6 @@ function mix(
   );
 }
 
-function drawGradientBand(page: any, x: number, y: number, w: number, h: number, from: ReturnType<typeof rgb>, to: ReturnType<typeof rgb>) {
-  // simple horizontal gradient via thin strips
-  const steps = 48;
-  const stepW = w / steps;
-  for (let i = 0; i < steps; i++) {
-    const c = mix(from, to, i / (steps - 1));
-    page.drawRectangle({ x: x + i * stepW, y, width: stepW + 0.5, height: h, color: c });
-  }
-}
-
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -117,22 +104,76 @@ type DbTicket = {
   order_item_id: string | null;
 };
 
-async function tryFetchLogo(origin: string): Promise<
-  | { bytes: Uint8Array; kind: "png" | "jpg" }
-  | null
-> {
-  // Single source of truth: public/images/logo.png
-  const path = "/images/logo.png";
+type DbOrderItem = {
+  id: string;
+  category: string | null;
+  product_name_snapshot: string | null;
+  variant_label_snapshot: string | null;
+  canonical_day_set: string | null;
+};
 
+async function tryFetchLogo(
+  origin: string,
+): Promise<{ bytes: Uint8Array; kind: "png" | "jpg" } | null> {
+  const path = "/images/logo.png";
   try {
     const res = await fetch(`${origin}${path}`, { cache: "no-store" });
     if (!res.ok) return null;
-
     const buf = new Uint8Array(await res.arrayBuffer());
     return { bytes: buf, kind: "png" };
   } catch {
     return null;
   }
+}
+
+function ticketTypeLabel(item: DbOrderItem | undefined | null): string {
+  const cat = String(item?.category || "").toLowerCase();
+  if (cat === "vip") return "VIP";
+  return "Fan Pit";
+}
+
+function itemDisplayName(item: DbOrderItem | undefined | null): string {
+  // Prefer snapshot name (already “Fan Pit - ...” after your rename), fallback to category
+  const name = asString(item?.product_name_snapshot);
+  return name || ticketTypeLabel(item);
+}
+
+function parseVipTableNumber(tableLabel: string): string {
+  // If label already "Masa X" keep; else return label
+  return tableLabel;
+}
+
+async function loadVipTableByOrderItemId(orderId: string) {
+  // order_item_id -> table label (e.g., "Masa 12" or custom label)
+  const m = new Map<string, string>();
+
+  try {
+    // relies on FK: vip_table_reservations.vip_table_id -> vip_tables.id
+    const { data, error } = await supabase
+      .from("vip_table_reservations")
+      .select(
+        "order_item_id, vip_table_id, vip_tables:vip_table_id(label, table_number)",
+      )
+      .eq("order_id", orderId);
+
+    if (error) throw error;
+
+    for (const r of (data || []) as any[]) {
+      const label =
+        typeof r.vip_tables?.label === "string" && r.vip_tables.label.trim()
+          ? r.vip_tables.label.trim()
+          : typeof r.vip_tables?.table_number === "number"
+            ? `Masa ${r.vip_tables.table_number}`
+            : null;
+
+      if (r.order_item_id && label) m.set(r.order_item_id, label);
+    }
+  } catch (e) {
+    // don’t break PDFs if VIP join fails
+    console.warn("[tickets/pdf] vip table join failed (ignored)", e);
+  }
+
+  return m;
 }
 
 export async function GET(req: Request) {
@@ -152,8 +193,9 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (orderErr) throw orderErr;
-    if (!order)
+    if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
 
     const { data: tickets, error: tErr } = await supabase
       .from("issued_tickets")
@@ -170,6 +212,23 @@ export async function GET(req: Request) {
         { status: 404 },
       );
     }
+
+    // ✅ Load order items so each ticket page can show ticket type/name/days
+    const { data: orderItemsRaw, error: oiErr } = await supabase
+      .from("order_items")
+      .select(
+        "id, category, product_name_snapshot, variant_label_snapshot, canonical_day_set",
+      )
+      .eq("order_id", order.id);
+
+    if (oiErr) throw oiErr;
+
+    const orderItems = (orderItemsRaw || []) as unknown as DbOrderItem[];
+    const itemById = new Map<string, DbOrderItem>();
+    for (const it of orderItems) itemById.set(it.id, it);
+
+    // ✅ VIP table label per order_item_id
+    const vipTableByOrderItemId = await loadVipTableByOrderItemId(order.id);
 
     const pdf = await PDFDocument.create();
     const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -205,9 +264,6 @@ export async function GET(req: Request) {
         color: THEME.bg,
       });
 
-      // Top glow gradient band
-      // REMOVED: drawGradientBand(page, 0, height - 110, width, 110, mix(THEME.cyan, THEME.bg, 0.65), mix(THEME.purple, THEME.bg, 0.65));
-
       // Simple header
       page.drawText(pdfSafeText("Banaton Fest 2026"), {
         x: 40,
@@ -220,7 +276,11 @@ export async function GET(req: Request) {
       if (logoImage) {
         const maxLogoW = 140;
         const maxLogoH = 46;
-        const s = Math.min(maxLogoW / logoImage.width, maxLogoH / logoImage.height, 1);
+        const s = Math.min(
+          maxLogoW / logoImage.width,
+          maxLogoH / logoImage.height,
+          1,
+        );
         const w = logoImage.width * s;
         const h = logoImage.height * s;
 
@@ -233,7 +293,7 @@ export async function GET(req: Request) {
         });
       }
 
-      // Subtle divider line
+      // Divider line
       page.drawRectangle({
         x: 36,
         y: height - 86,
@@ -253,7 +313,7 @@ export async function GET(req: Request) {
         borderWidth: 1,
       });
 
-      // Subtle accent line
+      // Accent line
       page.drawRectangle({
         x: 36,
         y: height - 500,
@@ -272,20 +332,75 @@ export async function GET(req: Request) {
         color: THEME.text,
       });
 
-      if (buyerName) {
-        page.drawText(pdfSafeText(`Nume: ${buyerName}`), {
+      // ✅ Ticket type + label + VIP table
+      const item = t.order_item_id ? itemById.get(t.order_item_id) : undefined;
+      const typeLabel = ticketTypeLabel(item);
+      const title = itemDisplayName(item);
+      const variant = asString(item?.variant_label_snapshot);
+      const daySet = asString(item?.canonical_day_set);
+
+      // "Tip: VIP / Fan Pit"
+      page.drawText(pdfSafeText(`Tip: ${typeLabel}`), {
+        x: 54,
+        y: height - 255,
+        size: 12,
+        font: fontBold,
+        color: typeLabel === "VIP" ? THEME.gold : THEME.cyan,
+      });
+
+      // "Bilet: <name> · <variant>"
+      const titleLine = [title, variant].filter(Boolean).join(" · ");
+      page.drawText(pdfSafeText(`Bilet: ${titleLine}`), {
+        x: 54,
+        y: height - 275,
+        size: 12,
+        font,
+        color: THEME.muted,
+      });
+
+      if (daySet) {
+        page.drawText(pdfSafeText(`Zile: ${daySet.replaceAll(",", ", ")}`), {
           x: 54,
-          y: height - 260,
+          y: height - 295,
           size: 12,
           font,
           color: THEME.muted,
         });
       }
 
+      if (typeLabel === "VIP" && t.order_item_id) {
+        const tableLabel = vipTableByOrderItemId.get(t.order_item_id) || null;
+        if (tableLabel) {
+          page.drawText(
+            pdfSafeText(`Masa: ${parseVipTableNumber(tableLabel)}`),
+            {
+              x: 54,
+              y: height - 315,
+              size: 12,
+              font: fontBold,
+              color: THEME.gold,
+            },
+          );
+        }
+      }
+
+      // Buyer info
+      let buyerInfoY = height - 345;
+      if (buyerName) {
+        page.drawText(pdfSafeText(`Nume: ${buyerName}`), {
+          x: 54,
+          y: buyerInfoY,
+          size: 12,
+          font,
+          color: THEME.muted,
+        });
+        buyerInfoY -= 18;
+      }
+
       if (order.customer_email) {
         page.drawText(pdfSafeText(`Email: ${order.customer_email}`), {
           x: 54,
-          y: height - 280,
+          y: buyerInfoY,
           size: 12,
           font,
           color: THEME.muted,
@@ -336,7 +451,6 @@ export async function GET(req: Request) {
         color: mix(THEME.border, THEME.bg, 0.35),
       });
 
-      // Footer note
       page.drawText(pdfSafeText("Prezinta acest cod QR la intrare."), {
         x: 36,
         y: 92,
@@ -345,6 +459,7 @@ export async function GET(req: Request) {
         color: THEME.muted,
       });
 
+      // Keep token small (useful if printing) — remove if you want zero technical details
       page.drawText(pdfSafeText(`Order token: ${token}`), {
         x: 36,
         y: 72,

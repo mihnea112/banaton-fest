@@ -20,6 +20,20 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl)
+  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_URL");
+if (!supabaseServiceRoleKey)
+  throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+
+// server-side only (service role). Do NOT expose this key client-side.
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
 async function getNextTicketNumberStart(): Promise<number> {
   const { data, error } = await supabase
     .from("issued_tickets")
@@ -111,12 +125,15 @@ async function issueTicketsIfMissing(params: {
   const BATCH = 200;
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
-    const { error: insErr } = await supabase.from("issued_tickets").insert(slice);
+    const { error: insErr } = await supabase
+      .from("issued_tickets")
+      .insert(slice);
     if (insErr) throw insErr;
   }
 
   return { issued: true, count: rows.length };
 }
+
 const GMAIL_USER = process.env.GMAIL_USER || process.env.GMAIL_EMAIL || null;
 const GMAIL_APP_PASSWORD =
   process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASS || null;
@@ -125,40 +142,69 @@ function canSendMail() {
   return !!(GMAIL_USER && GMAIL_APP_PASSWORD);
 }
 
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function escapeAttr(s: string) {
+  return escapeHtml(s);
+}
+
 function buildTicketsEmailHtml(params: {
   attendeeName: string | null;
   publicToken: string;
-  tickets: Array<{ ticket_number?: number | null; qr_code_text?: string | null }>;
+  tickets: Array<{
+    ticket_number?: number | null;
+    qr_code_text?: string | null;
+  }>;
   items: Array<{
     product_name_snapshot?: string | null;
     variant_label_snapshot?: string | null;
     category?: string | null;
     qty?: number | null;
     canonical_day_set?: string | null;
+    vip_table_label?: string | null; // ✅ added
   }>;
   viewUrl: string;
   pdfUrl: string;
 }) {
-  const {
-    attendeeName,
-    publicToken,
-    tickets,
-    items,
-    viewUrl,
-    pdfUrl,
-  } = params;
+  const { attendeeName, publicToken, tickets, items, viewUrl, pdfUrl } = params;
 
-  const nameLine = attendeeName ? `Salut, <b>${escapeHtml(attendeeName)}</b>!` : "Salut!";
+  const nameLine = attendeeName
+    ? `Salut, <b>${escapeHtml(attendeeName)}</b>!`
+    : "Salut!";
 
   const itemsHtml = (items || [])
     .map((it) => {
+      const cat = String(it.category || "").toLowerCase();
       const title =
         it.product_name_snapshot ||
-        (it.category === "vip" ? "Bilet VIP" : "Bilet Fan Pit");
-      const variant = it.variant_label_snapshot ? ` · ${it.variant_label_snapshot}` : "";
-      const days = it.canonical_day_set ? ` · Zile: ${it.canonical_day_set.replaceAll(',', ', ')}` : "";
-      const qty = typeof it.qty === "number" && it.qty > 0 ? ` (x${it.qty})` : "";
-      return `<li style="margin:6px 0;">${escapeHtml(title)}${escapeHtml(variant)}${escapeHtml(days)}${escapeHtml(qty)}</li>`;
+        (cat === "vip" ? "Bilet VIP" : "Bilet Fan Pit");
+
+      const variant = it.variant_label_snapshot
+        ? ` · ${it.variant_label_snapshot}`
+        : "";
+
+      const days = it.canonical_day_set
+        ? ` · Zile: ${it.canonical_day_set.replaceAll(",", ", ")}`
+        : "";
+
+      const table =
+        cat === "vip" && it.vip_table_label
+          ? ` · Masa: ${it.vip_table_label}`
+          : "";
+
+      const qty =
+        typeof it.qty === "number" && it.qty > 0 ? ` (x${it.qty})` : "";
+
+      return `<li style="margin:6px 0;">${escapeHtml(title)}${escapeHtml(
+        variant,
+      )}${escapeHtml(days)}${escapeHtml(table)}${escapeHtml(qty)}</li>`;
     })
     .join("");
 
@@ -166,7 +212,11 @@ function buildTicketsEmailHtml(params: {
     .map((t) => {
       const no = t.ticket_number ?? "";
       const qr = t.qr_code_text ?? "";
-      return `<li style="margin:6px 0;">Bilet <b>#${escapeHtml(String(no))}</b> — <span style="color:#6b7280; font-size:12px;">${escapeHtml(qr)}</span></li>`;
+      return `<li style="margin:6px 0;">Bilet <b>#${escapeHtml(
+        String(no),
+      )}</b> — <span style="color:#6b7280; font-size:12px;">${escapeHtml(
+        qr,
+      )}</span></li>`;
     })
     .join("");
 
@@ -175,7 +225,9 @@ function buildTicketsEmailHtml(params: {
     <div style="max-width:640px; margin:0 auto; border:1px solid rgba(124,77,255,0.35); background:rgba(45,27,78,0.55); border-radius:16px; overflow:hidden;">
       <div style="padding:18px 20px; background:rgba(36,18,62,0.85); border-bottom:1px solid rgba(124,77,255,0.35);">
         <div style="font-weight:800; font-size:18px;">Banaton Fest 2026 — Confirmare plată</div>
-        <div style="margin-top:6px; color:#b39ddb; font-size:13px;">Cod comandă: <b>${escapeHtml(publicToken)}</b></div>
+        <div style="margin-top:6px; color:#b39ddb; font-size:13px;">Cod comandă: <b>${escapeHtml(
+          publicToken,
+        )}</b></div>
       </div>
 
       <div style="padding:20px;">
@@ -193,28 +245,18 @@ function buildTicketsEmailHtml(params: {
         </div>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:16px;">
-          <a href="${escapeAttr(viewUrl)}" style="display:inline-block; padding:10px 14px; border-radius:12px; background:#00E5FF; color:#120a1a; font-weight:800; text-decoration:none;">Vezi biletele</a>
-          <a href="${escapeAttr(pdfUrl)}" style="display:inline-block; padding:10px 14px; border-radius:12px; background:#FFD700; color:#1b1030; font-weight:800; text-decoration:none;">Descarcă PDF</a>
+          <a href="${escapeAttr(
+            viewUrl,
+          )}" style="display:inline-block; padding:10px 14px; border-radius:12px; background:#00E5FF; color:#120a1a; font-weight:800; text-decoration:none;">Vezi biletele</a>
+          <a href="${escapeAttr(
+            pdfUrl,
+          )}" style="display:inline-block; padding:10px 14px; border-radius:12px; background:#FFD700; color:#1b1030; font-weight:800; text-decoration:none;">Descarcă PDF</a>
         </div>
 
         <p style="margin:16px 0 0 0; color:#b39ddb; font-size:12px;">Prezintă codul QR la intrare. Pentru suport: office.banaton@gmail.com</p>
       </div>
     </div>
   </div>`;
-}
-
-function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function escapeAttr(s: string) {
-  // basic safe attr
-  return escapeHtml(s);
 }
 
 async function sendTicketsEmail(params: {
@@ -250,8 +292,6 @@ function jsonError(message: string, status = 400) {
 }
 
 async function requireAdminAuth() {
-  // Reuse the same cookie your middleware uses to protect /admin.
-  // If your cookie name differs, change it here.
   const c = await cookies();
   const admin = c.get("banaton_admin")?.value;
   if (!admin) {
@@ -267,25 +307,44 @@ function isEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+async function loadVipTableMap(orderId: string) {
+  // order_item_id -> table label
+  const vipTableByOrderItemId = new Map<string, string>();
 
-if (!supabaseUrl)
-  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_URL");
-if (!supabaseServiceRoleKey)
-  throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+  try {
+    // NOTE: this relies on a PostgREST relationship from vip_table_reservations.vip_table_id -> vip_tables.id
+    // If your relationship alias differs, Supabase will error; we swallow it so public endpoint won't break.
+    const { data: vipRows, error: vipErr } = await supabase
+      .from("vip_table_reservations")
+      .select(
+        "order_item_id, vip_table_id, vip_tables:vip_table_id(label, table_number)",
+      )
+      .eq("order_id", orderId);
 
-// server-side only (service role). Do NOT expose this key client-side.
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
+    if (vipErr) throw vipErr;
+
+    for (const r of (vipRows || []) as any[]) {
+      const label =
+        typeof r.vip_tables?.label === "string" && r.vip_tables.label.trim()
+          ? r.vip_tables.label.trim()
+          : typeof r.vip_tables?.table_number === "number"
+            ? `Masa ${r.vip_tables.table_number}`
+            : null;
+
+      if (r.order_item_id && label)
+        vipTableByOrderItemId.set(r.order_item_id, label);
+    }
+  } catch (e) {
+    console.warn("[tickets/public] vip table join failed (ignored)", e);
+  }
+
+  return vipTableByOrderItemId;
+}
 
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const token = asString(url.searchParams.get("token"));
-
     if (!token) return jsonError("Missing token");
 
     // 1) resolve order by public_token
@@ -305,7 +364,10 @@ export async function GET(req: Request) {
     const payStatus = String(order.payment_status ?? "").toLowerCase();
     const isPaid = status === "paid" || payStatus === "paid";
 
-    let issuedNow = { issued: false, count: 0 } as { issued: boolean; count: number };
+    let issuedNow = { issued: false, count: 0 } as {
+      issued: boolean;
+      count: number;
+    };
 
     if (isPaid) {
       const attendeeName = [order.customer_first_name, order.customer_last_name]
@@ -331,22 +393,29 @@ export async function GET(req: Request) {
 
     if (tErr) throw tErr;
 
-    // 3) optional: load order items for labels (nice UI)
+    // 3) load order items
     const { data: itemsRaw, error: iErr } = await supabase
       .from("order_items")
       .select(
         "id, category, quantity, unit_price_ron, line_total_ron, product_name_snapshot, variant_label_snapshot, duration_type, canonical_day_set",
       )
       .eq("order_id", order.id);
+
+    // ✅ VIP table mapping (order_item_id -> "Masa X" / label)
+    const vipTableByOrderItemId = await loadVipTableMap(order.id);
+
     const origin = new URL(req.url).origin;
+
     // 2.5) Send confirmation email (ONLY order form email, not Stripe) — best-effort & idempotent
     // IMPORTANT: This endpoint may be polled. Use an atomic DB guard to ensure we send only once.
     const orderEmail = asString((order as any).customer_email);
 
     if (isPaid && orderEmail) {
-      // If tickets already exist (e.g., issued on a previous request) we still want to send the email once.
       const ticketsExist = Array.isArray(tickets) && tickets.length > 0;
-      const alreadySentAt = (order as any).tickets_email_sent_at as string | null | undefined;
+      const alreadySentAt = (order as any).tickets_email_sent_at as
+        | string
+        | null
+        | undefined;
 
       if (!ticketsExist) {
         // Nothing to send yet (tickets not issued). This endpoint may be polled.
@@ -375,6 +444,7 @@ export async function GET(req: Request) {
             variant_label_snapshot: it.variant_label_snapshot ?? null,
             duration_type: it.duration_type ?? null,
             canonical_day_set: it.canonical_day_set ?? null,
+            vip_table_label: vipTableByOrderItemId.get(it.id) ?? null,
           })),
           tickets_ready: false,
           tickets_email_sent: !!alreadySentAt,
@@ -382,7 +452,6 @@ export async function GET(req: Request) {
         });
       }
 
-      // If the email was already sent, don't attempt to send again.
       if (alreadySentAt) {
         console.log("[tickets email] already sent_at present, skip", {
           orderId: order.id,
@@ -400,22 +469,22 @@ export async function GET(req: Request) {
           .maybeSingle();
 
         if (claimErr) {
-          // If claim fails, do not send (prevents duplicate spam in case of unexpected DB behavior)
           console.error("[tickets email] claim failed", claimErr);
         } else if (!claimRow) {
-          // Already sent by a previous request
-          console.log("[tickets email] already sent, skip", { orderId: order.id });
+          console.log("[tickets email] already sent, skip", {
+            orderId: order.id,
+          });
         } else {
           const viewUrl = `${origin}/success?order=${encodeURIComponent(order.public_token)}`;
           const pdfUrl = `${origin}/api/tickets/pdf?token=${encodeURIComponent(order.public_token)}`;
 
-          // build lightweight items list for email
           const itemsForEmail = (itemsRaw || []).map((it: any) => ({
             product_name_snapshot: it.product_name_snapshot ?? null,
             variant_label_snapshot: it.variant_label_snapshot ?? null,
             category: it.category ?? null,
             qty: it.quantity ?? null,
             canonical_day_set: it.canonical_day_set ?? null,
+            vip_table_label: vipTableByOrderItemId.get(it.id) ?? null,
           }));
 
           const html = buildTicketsEmailHtml({
@@ -448,7 +517,6 @@ export async function GET(req: Request) {
             });
           } catch (mailErr) {
             // If the email fails AFTER claiming, we keep tickets_email_sent_at set to prevent spam.
-            // You can add a manual resend admin flow later if you need.
             console.error("[tickets email] send failed", mailErr);
           }
         }
@@ -465,10 +533,10 @@ export async function GET(req: Request) {
       variant_label_snapshot: it.variant_label_snapshot ?? null,
       duration_type: it.duration_type ?? null,
       canonical_day_set: it.canonical_day_set ?? null,
+      vip_table_label: vipTableByOrderItemId.get(it.id) ?? null, // ✅
     }));
 
     if (iErr) {
-      // don't fail UI if this table differs; just omit labels
       return NextResponse.json({
         ok: true,
         order: {
@@ -486,7 +554,7 @@ export async function GET(req: Request) {
         items: [],
         tickets_ready: isPaid && (tickets ?? []).length > 0,
         tickets_email_sent: !!(order as any).tickets_email_sent_at,
-        tickets_email_sent_at: ((order as any).tickets_email_sent_at ?? null),
+        tickets_email_sent_at: (order as any).tickets_email_sent_at ?? null,
       });
     }
 
@@ -507,7 +575,7 @@ export async function GET(req: Request) {
       items: items,
       tickets_ready: isPaid && (tickets ?? []).length > 0,
       tickets_email_sent: !!(order as any).tickets_email_sent_at,
-      tickets_email_sent_at: ((order as any).tickets_email_sent_at ?? null),
+      tickets_email_sent_at: (order as any).tickets_email_sent_at ?? null,
     });
   } catch (e) {
     console.error("[GET /api/tickets/public] error", e);
@@ -566,10 +634,7 @@ export async function POST(req: Request) {
 
     if (!isPaid) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: { message: "Order is not paid" },
-        },
+        { ok: false, error: { message: "Order is not paid" } },
         { status: 400 },
       );
     }
@@ -589,7 +654,6 @@ export async function POST(req: Request) {
       (order as any).customer_email = overrideEmail;
       (order as any).tickets_email_sent_at = null;
     } else {
-      // Force resend without changing email
       const { error: resetErr } = await supabase
         .from("orders")
         .update({ tickets_email_sent_at: null, updated_at: nowIso() })
@@ -613,6 +677,9 @@ export async function POST(req: Request) {
       attendeeName: attendeeName || null,
     });
 
+    // ✅ VIP table map
+    const vipTableByOrderItemId = await loadVipTableMap(order.id);
+
     // 4) Load tickets + items for email body
     const { data: tickets, error: tErr } = await supabase
       .from("issued_tickets")
@@ -624,7 +691,9 @@ export async function POST(req: Request) {
 
     const { data: itemsRaw } = await supabase
       .from("order_items")
-      .select("category, quantity, product_name_snapshot, variant_label_snapshot, canonical_day_set")
+      .select(
+        "id, category, quantity, product_name_snapshot, variant_label_snapshot, canonical_day_set",
+      )
       .eq("order_id", order.id);
 
     const origin = new URL(req.url).origin;
@@ -656,6 +725,7 @@ export async function POST(req: Request) {
         category: it.category ?? null,
         qty: it.quantity ?? null,
         canonical_day_set: it.canonical_day_set ?? null,
+        vip_table_label: vipTableByOrderItemId.get(it.id) ?? null,
       })),
       viewUrl,
       pdfUrl,
