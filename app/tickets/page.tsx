@@ -9,6 +9,130 @@ function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
+// --- Locale and i18n helpers ---
+type Locale = "ro" | "en";
+
+function getCookieValue(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${name}=`));
+  if (!match) return null;
+  const v = match.slice(name.length + 1);
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+
+function getLocaleFromCookie(): Locale {
+  const v = (getCookieValue("banaton_locale") || "ro").toLowerCase();
+  return v === "en" ? "en" : "ro";
+}
+
+function t(locale: Locale, ro: string, en: string) {
+  return locale === "en" ? en : ro;
+}
+
+const DAY_DATES: Record<DayCodeLower, string> = {
+  fri: "29.05",
+  sat: "30.05",
+  sun: "31.05",
+  mon: "01.06",
+};
+
+function dayLabel(locale: Locale, day: DayCodeLower) {
+  const roName = day === "fri" ? "Vineri" : day === "sat" ? "Sâmbătă" : day === "sun" ? "Duminică" : "Luni";
+  const enName = day === "fri" ? "Friday" : day === "sat" ? "Saturday" : day === "sun" ? "Sunday" : "Monday";
+  return `${locale === "en" ? enName : roName} (${DAY_DATES[day]})`;
+}
+
+// Product/variant text overrides (prices remain unchanged)
+const PRODUCT_I18N: Record<string, { roName?: string; enName?: string; roDesc?: string; enDesc?: string; roDuration?: string; enDuration?: string }> = {
+  "gen-4day": {
+    roName: "Abonament 4 Zile",
+    enName: "4-Day Pass",
+    roDuration: "4 Zile",
+    enDuration: "4 Days",
+    roDesc: "Acces Fan Pit pentru toate cele 4 zile ale festivalului (29.05–01.06.2026)",
+    enDesc: "Fan Pit access for all 4 festival days (29.05–01.06.2026)",
+  },
+  "gen-3day": {
+    roName: "Abonament 3 Zile",
+    enName: "3-Day Pass",
+    roDuration: "3 Zile",
+    enDuration: "3 Days",
+    roDesc: "Valabil pentru Vineri (29.05) + Duminică (31.05) + Luni (01.06)",
+    enDesc: "Valid for Friday (29.05) + Sunday (31.05) + Monday (01.06)",
+  },
+  "gen-2day": {
+    roName: "Abonament 2 Zile",
+    enName: "2-Day Pass",
+    roDuration: "2 Zile",
+    enDuration: "2 Days",
+    roDesc: "Alege orice 2 zile dintre Vineri (29.05), Duminică (31.05) și Luni (01.06)",
+    enDesc: "Pick any 2 days between Friday (29.05), Sunday (31.05) and Monday (01.06)",
+  },
+  "gen-1day": {
+    roName: "Bilet 1 Zi",
+    enName: "1-Day Ticket",
+    roDuration: "1 Zi",
+    enDuration: "1 Day",
+    roDesc: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 50 RON / Sâmbătă (30.05): 80 RON",
+    enDesc: "Fri (29.05), Sun (31.05) & Mon (01.06): 50 RON / Sat (30.05): 80 RON",
+  },
+  "vip-4day": {
+    roName: "VIP 4 Zile",
+    enName: "VIP 4 Days",
+    roDuration: "4 Zile",
+    enDuration: "4 Days",
+    roDesc: "Acces VIP pentru toate cele 4 zile (masa se selectează în pagina de mese VIP)",
+    enDesc: "VIP access for all 4 days (table selection happens on the VIP tables page)",
+  },
+  "vip-1day": {
+    roName: "VIP - 1 Zi",
+    enName: "VIP - 1 Day",
+    roDuration: "1 Zi",
+    enDuration: "1 Day",
+    roDesc: "Include loc la masă (selectezi masa în pagina de mese VIP)",
+    enDesc: "Includes a table seat (choose your table on the VIP tables page)",
+  },
+};
+
+const VARIANT_I18N: Record<string, { ro: string; en: string }> = {
+  // Fan Pit 2-day
+  "gen-2day-fri-sun": { ro: "Vineri (29.05) + Duminică (31.05)", en: "Friday (29.05) + Sunday (31.05)" },
+  "gen-2day-fri-mon": { ro: "Vineri (29.05) + Luni (01.06)", en: "Friday (29.05) + Monday (01.06)" },
+  "gen-2day-sun-mon": { ro: "Duminică (31.05) + Luni (01.06)", en: "Sunday (31.05) + Monday (01.06)" },
+  // Fan Pit 1-day
+  "gen-1day-fri": { ro: "Vineri (29.05)", en: "Friday (29.05)" },
+  "gen-1day-sat": { ro: "Sâmbătă (30.05)", en: "Saturday (30.05)" },
+  "gen-1day-sun": { ro: "Duminică (31.05)", en: "Sunday (31.05)" },
+  "gen-1day-mon": { ro: "Luni (01.06)", en: "Monday (01.06)" },
+  // VIP 1-day
+  "vip-1day-fri": { ro: "Vineri (29.05)", en: "Friday (29.05)" },
+  "vip-1day-sat": { ro: "Sâmbătă (30.05) (CECA)", en: "Saturday (30.05) (CECA)" },
+  "vip-1day-sun": { ro: "Duminică (31.05)", en: "Sunday (31.05)" },
+  "vip-1day-mon": { ro: "Luni (01.06)", en: "Monday (01.06)" },
+};
+
+function localizeProduct(locale: Locale, p: TicketProduct) {
+  const cfg = PRODUCT_I18N[p.id] || {};
+  return {
+    name: (locale === "en" ? cfg.enName : cfg.roName) || p.name,
+    durationLabel: (locale === "en" ? cfg.enDuration : cfg.roDuration) || p.durationLabel,
+    description: (locale === "en" ? cfg.enDesc : cfg.roDesc) || p.description,
+  };
+}
+
+function localizeVariantLabel(locale: Locale, variantId: string, fallback: string) {
+  const cfg = VARIANT_I18N[variantId];
+  if (!cfg) return fallback;
+  return locale === "en" ? cfg.en : cfg.ro;
+}
+
 
 type TicketCategory = "general" | "vip";
 
@@ -190,12 +314,7 @@ function normalizeAvailabilityPayload(payload: unknown): AvailabilityByDay {
   return out;
 }
 
-function dayLabelRo(day: DayCodeLower) {
-  if (day === "fri") return "Vineri";
-  if (day === "sat") return "Sâmbătă";
-  if (day === "sun") return "Duminică";
-  return "Luni";
-}
+
 
 interface ProductVariant {
   id: string;
@@ -308,6 +427,12 @@ const PRODUCTS: TicketProduct[] = [
 
 export default function Tickets() {
   const router = useRouter();
+  const [locale, setLocale] = useState<Locale>("ro");
+
+  useEffect(() => {
+    setLocale(getLocaleFromCookie());
+  }, []);
+
   const [cart, setCart] = useState<Record<string, number>>({});
   const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -375,7 +500,7 @@ export default function Tickets() {
   const formatAvailability = (day: DayCodeLower) => {
     const v = fanPitAvailability[day];
     if (typeof v !== "number") return null;
-    return `${v} disponibile`;
+    return `${v} ${t(locale, "disponibile", "available")}`;
   };
 
   const getRemainingForDays = (days: DayCodeLower[]) => {
@@ -392,7 +517,7 @@ export default function Tickets() {
   const formatPackAvailability = (days: DayCodeLower[]) => {
     const n = getRemainingForDays(days);
     if (typeof n !== "number") return null;
-    return `${n} disponibile`;
+    return `${n} ${t(locale, "disponibile", "available")}`;
   };
 
   const dayFromVariantId = (variantId: string): DayCodeLower | null => {
@@ -685,6 +810,7 @@ export default function Tickets() {
   const renderProductRow = (product: TicketProduct) => {
     const hasVariants = !!product.variants;
     const isExpanded = expandedProducts[product.id];
+    const localized = localizeProduct(locale, product);
 
     // Calculate total quantity for this product (sum of variants if any)
     const totalQty = hasVariants
@@ -712,21 +838,21 @@ export default function Tickets() {
           <div className="flex flex-col gap-1 mb-4 sm:mb-0">
             <div className="flex items-center gap-3">
               <span className="font-bold text-white text-lg">
-                {product.name}
+                {localized.name}
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-brand-text uppercase tracking-wider">
-                {product.durationLabel}
+                {localized.durationLabel}
               </span>
             </div>
-            {product.description && (
+            {localized.description && (
               <p className="text-sm text-brand-text/70">
-                {product.description}
+                {localized.description}
               </p>
             )}
             <div className="flex items-center gap-2 mt-1 sm:hidden flex-wrap">
               <span className="text-accent-cyan font-bold">
                 {hasVariants
-                  ? `de la ${Math.min(...product.variants!.map((v) => v.price))} RON`
+                  ? `${t(locale, "de la", "from")} ${Math.min(...product.variants!.map((v) => v.price))} RON`
                   : `${product.price} RON`}
               </span>
 
@@ -734,9 +860,9 @@ export default function Tickets() {
               {product.category === "general" && product.id === "gen-1day" && (
                 <span className="text-[11px] text-brand-text/70">
                   {isLoadingAvailability
-                    ? "Se verifică disponibilitatea…"
+                    ? t(locale, "Se verifică disponibilitatea…", "Checking availability…")
                     : Object.keys(fanPitAvailability).length
-                      ? "Disponibilitate pe zile mai jos"
+                      ? t(locale, "Disponibilitate pe zile mai jos", "Availability by day below")
                       : ""}
                 </span>
               )}
@@ -756,7 +882,7 @@ export default function Tickets() {
           <div className="flex items-center justify-between sm:justify-end gap-6">
             <span className="hidden sm:block text-accent-cyan font-bold text-lg">
               {hasVariants
-                ? `de la ${Math.min(...product.variants!.map((v) => v.price))} RON`
+                ? `${t(locale, "de la", "from")} ${Math.min(...product.variants!.map((v) => v.price))} RON`
                 : `${product.price} RON`}
             </span>
             {product.category === "general" && (product.id === "gen-2day" || product.id === "gen-3day" || product.id === "gen-4day") && (() => {
@@ -774,7 +900,7 @@ export default function Tickets() {
               <div className="flex items-center gap-2">
                 {totalQty > 0 && (
                   <span className="bg-accent-cyan text-brand-deep text-xs font-bold px-2 py-1 rounded-full">
-                    {totalQty} selectate
+                    {totalQty} {t(locale, "selectate", "selected")}
                   </span>
                 )}
                 <span
@@ -802,10 +928,12 @@ export default function Tickets() {
           >
             <div className="p-4 grid gap-3">
               <p className="text-sm text-brand-text mb-1 font-medium">
-                Selectează perioada:
+                {t(locale, "Selectează perioada:", "Select period:")}
                 {product.category === "general" && product.id === "gen-1day" && Object.keys(fanPitAvailability).length > 0 ? (
                   <span className="ml-2 text-xs font-normal text-brand-text/70">
-                    (rămase: {dayLabelRo("fri")} {fanPitAvailability.fri ?? "—"}, {dayLabelRo("sat")} {fanPitAvailability.sat ?? "—"}, {dayLabelRo("sun")} {fanPitAvailability.sun ?? "—"}, {dayLabelRo("mon")} {fanPitAvailability.mon ?? "—"})
+                    <span>
+                      {t(locale, "(rămase:", "(remaining:")} {dayLabel(locale, "fri")} {fanPitAvailability.fri ?? "—"}, {dayLabel(locale, "sat")} {fanPitAvailability.sat ?? "—"}, {dayLabel(locale, "sun")} {fanPitAvailability.sun ?? "—"}, {dayLabel(locale, "mon")} {fanPitAvailability.mon ?? "—"})
+                    </span>
                   </span>
                 ) : null}
               </p>
@@ -822,7 +950,7 @@ export default function Tickets() {
                   >
                     <div className="flex flex-col">
                       <span className="text-white font-medium text-sm">
-                        {variant.label}
+                        {localizeVariantLabel(locale, variant.id, variant.label)}
                       </span>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-accent-cyan text-xs font-bold">
@@ -875,10 +1003,10 @@ export default function Tickets() {
           <div className="flex flex-col gap-3">
             <div className="flex gap-6 justify-between items-end">
               <p className="text-white text-base font-medium leading-normal">
-                Progres Rezervare
+                {t(locale, "Progres Rezervare", "Booking Progress")}
               </p>
               <p className="text-accent-cyan/80 text-sm font-normal leading-normal">
-                Pasul 1 din 3
+                {t(locale, "Pasul 1 din 3", "Step 1 of 3")}
               </p>
             </div>
             <div className="h-2 w-full rounded-full bg-white/10">
@@ -894,10 +1022,10 @@ export default function Tickets() {
           <div className="flex-1 w-full lg:w-[65%] flex flex-col gap-10">
             <div className="flex flex-col gap-2">
               <h1 className="text-3xl lg:text-4xl font-black leading-tight tracking-[-0.033em] text-white">
-                Configurator Bilete
+                {t(locale, "Configurator Bilete", "Ticket Builder")}
               </h1>
               <p className="text-brand-text text-base font-medium">
-                Alege biletele dorite pentru Banaton Fest 2026.
+                {t(locale, "Alege biletele dorite pentru Banaton Fest 2026.", "Choose your Banaton Fest 2026 tickets.")}
               </p>
             </div>
 
@@ -930,11 +1058,11 @@ export default function Tickets() {
                   </span>
                 </div>
                 <h2 className="text-2xl font-bold tracking-tight text-white">
-                  Acces VIP
+                  {t(locale, "Acces VIP", "VIP Access")}
                 </h2>
               </div>
               <p className="text-sm text-brand-text/70">
-                Selecția mesei se face după apăsarea butonului de continuare.
+                {t(locale, "Selecția mesei se face după apăsarea butonului de continuare.", "Table selection happens after you continue.")}
               </p>
               <div className="flex flex-col gap-4">
                 {PRODUCTS.filter((p) => p.category === "vip").map(
@@ -949,10 +1077,10 @@ export default function Tickets() {
               </span>
               <div>
                 <p className="text-sm font-medium text-accent-gold mb-1">
-                  Informație importantă
+                  {t(locale, "Informație importantă", "Important")}
                 </p>
                 <p className="text-sm text-brand-text">
-                  Copiii sub 12 ani au acces gratuit însoțiți de un adult plătitor.
+                  {t(locale, "Copiii sub 12 ani au acces gratuit însoțiți de un adult plătitor.", "Children under 12 enter for free when accompanied by a paying adult.")}
                 </p>
               </div>
             </div>
@@ -963,14 +1091,12 @@ export default function Tickets() {
                   table_restaurant
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-accent-cyan mb-1">
-                    Bilete VIP în coș
-                  </p>
-                  <p className="text-sm text-brand-text">
-                    La continuare vei fi redirecționat către pagina de selectare
-                    a locurilor VIP, unde aloci biletele VIP pe mese înainte de
-                    checkout.
-                  </p>
+                <p className="text-sm font-medium text-accent-cyan mb-1">
+                  {t(locale, "Bilete VIP în coș", "VIP tickets in cart")}
+                </p>
+                <p className="text-sm text-brand-text">
+                  {t(locale, "La continuare vei fi redirecționat către pagina de selectare a locurilor VIP, unde aloci biletele VIP pe mese înainte de checkout.", "Next, you will be redirected to the VIP tables page, where you assign your VIP tickets to a table before checkout.")}
+                </p>
                 </div>
               </div>
             )}
@@ -984,7 +1110,7 @@ export default function Tickets() {
                   <span className="material-symbols-outlined text-accent-cyan">
                     receipt_long
                   </span>
-                  Sumar Comandă
+                  {t(locale, "Sumar Comandă", "Order Summary")}
                 </h3>
 
                 <div className="flex flex-col gap-4 mb-6 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
@@ -993,7 +1119,7 @@ export default function Tickets() {
                       <span className="material-symbols-outlined text-4xl mb-2">
                         shopping_cart_off
                       </span>
-                      <p className="text-sm">Coșul tău este gol</p>
+                      <p className="text-sm">{t(locale, "Coșul tău este gol", "Your cart is empty")}</p>
                     </div>
                   ) : (
                     Object.entries(cart).map(([id, qty]) => {
@@ -1017,11 +1143,11 @@ export default function Tickets() {
                                 </p>
                               </div>
                               <p className="font-bold text-white text-sm">
-                                {product.name}
+                                {localizeProduct(locale, product).name}
                               </p>
                               {product.variantLabel && (
                                 <p className="text-xs text-accent-cyan mt-0.5">
-                                  {product.variantLabel}
+                                  {localizeVariantLabel(locale, product.id, product.variantLabel)}
                                 </p>
                               )}
                             </div>
@@ -1050,7 +1176,7 @@ export default function Tickets() {
                 <div className="mt-auto pt-4 border-t border-white/10">
                   <div className="flex justify-between items-end mb-2">
                     <span className="text-brand-text font-medium">
-                      Subtotal
+                      {t(locale, "Subtotal", "Subtotal")}
                     </span>
                     <span className="text-lg font-bold text-white">
                       {totalAmount} RON
@@ -1058,7 +1184,7 @@ export default function Tickets() {
                   </div>
                   <div className="flex justify-between items-end mb-6">
                     <span className="text-brand-text font-medium text-lg">
-                      Total de plată
+                      {t(locale, "Total de plată", "Total")}
                     </span>
                     <span className="text-3xl font-black text-accent-cyan drop-shadow-[0_0_8px_rgba(0,240,255,0.3)]">
                       {totalAmount} RON
@@ -1076,16 +1202,16 @@ export default function Tickets() {
                     )}
                   >
                     {isSubmitting
-                      ? "Se salvează..."
+                      ? t(locale, "Se salvează...", "Saving...")
                       : hasVipInCart
-                        ? "Alege masa VIP"
-                        : "Pasul Următor"}
+                        ? t(locale, "Alege masa VIP", "Choose VIP table")
+                        : t(locale, "Pasul Următor", "Next step")}
                     <span className="material-symbols-outlined group-hover:translate-x-1 transition-transform font-bold">
                       arrow_forward
                     </span>
                   </button>
                   <p className="text-center text-xs text-brand-text/60 mt-4">
-                    După finalizarea plății vei primi biletele pe email.
+                    {t(locale, "După finalizarea plății vei primi biletele pe email.", "After payment, you will receive your tickets by email.")}
                   </p>
                 </div>
               </div>

@@ -88,7 +88,9 @@ function normalizeTicketTitle(item: ApiOrderItem) {
     .replace(/General\s+Access/gi, "Fan Pit");
 }
 
-export default function VipClient() {
+type Lang = "ro" | "en";
+
+export default function VipClient({ lang = "ro" }: { lang?: Lang }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -112,6 +114,13 @@ export default function VipClient() {
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
 
   const TABLE_CAPACITY = 6;
+
+  const isEn = lang === "en";
+  const tr = (ro: string, en: string) => (isEn ? en : ro);
+
+  // Keep DB ids as "Masa X" but display as "Table X" in EN.
+  const displayTableLabel = (label: string) =>
+    isEn ? label.replace(/^Masa\s+/i, "Table ") : label;
 
   const vipSelectedDayCodes = useMemo(() => {
     const set = new Set<"fri" | "sat" | "sun" | "mon">();
@@ -173,7 +182,7 @@ export default function VipClient() {
 
     const loadOrder = async () => {
       if (!orderToken) {
-        setLoadError("Lipsește token-ul comenzii din URL.");
+        setLoadError(tr("Lipsește token-ul comenzii din URL.", "Missing order token in URL."));
         setIsLoadingOrder(false);
         return;
       }
@@ -194,7 +203,7 @@ export default function VipClient() {
 
         if (!res.ok || !json?.ok) {
           throw new Error(
-            json?.error?.message || "Nu s-a putut încărca comanda.",
+            json?.error?.message || tr("Nu s-a putut încărca comanda.", "Could not load the order."),
           );
         }
 
@@ -226,7 +235,7 @@ export default function VipClient() {
         setLoadError(
           error instanceof Error
             ? error.message
-            : "A apărut o eroare la încărcarea comenzii.",
+            : tr("A apărut o eroare la încărcarea comenzii.", "An error occurred while loading the order."),
         );
       } finally {
         if (!cancelled) setIsLoadingOrder(false);
@@ -392,7 +401,7 @@ export default function VipClient() {
         throw new Error(
           json?.error?.message ||
             json?.message ||
-            "Nu s-a putut salva alocarea VIP.",
+            tr("Nu s-a putut salva alocarea VIP.", "Could not save VIP allocation."),
         );
       }
 
@@ -405,7 +414,7 @@ export default function VipClient() {
       setAllocationError(
         error instanceof Error
           ? error.message
-          : "A apărut o eroare la salvarea alocării VIP.",
+          : tr("A apărut o eroare la salvarea alocării VIP.", "An error occurred while saving VIP allocation."),
       );
     } finally {
       setIsSavingAllocation(false);
@@ -441,8 +450,8 @@ export default function VipClient() {
         <div className="bg-[#1A0B2E] border border-[#4C2A85] rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-[0_0_50px_rgba(127,19,236,0.5)] overflow-hidden">
           <div className="p-6 border-b border-[#4C2A85] flex justify-between items-center bg-[#241242]">
             <div>
-              <h3 className="text-white text-xl font-bold">Alege Masa</h3>
-              <p className="text-indigo-300 text-sm">Zona {zoneId}</p>
+              <h3 className="text-white text-xl font-bold">{tr("Alege Masa", "Choose a table")}</h3>
+              <p className="text-indigo-300 text-sm">{tr("Zona", "Zone")} {zoneId}</p>
             </div>
             <button
               onClick={onClose}
@@ -487,11 +496,11 @@ export default function VipClient() {
                         isSelected ? "text-accent-cyan" : "text-white",
                       )}
                     >
-                      Masa {num}
+                      {tr("Masa", "Table")} {num}
                     </span>
 
                     <span className="mt-2 text-[11px] leading-tight text-indigo-200">
-                      Locuri libere:{" "}
+                      {tr("Locuri libere:", "Seats available:")}{" "}
                       <span className="font-bold text-white">{emptySeats}</span>
                     </span>
                     <span
@@ -501,8 +510,14 @@ export default function VipClient() {
                       )}
                     >
                       {canFitWholeOrder
-                        ? `Potrivită pentru ${vipItemsCount} bilete VIP`
-                        : `Nu încape comanda (${vipItemsCount} locuri)`}
+                        ? tr(
+                            `Potrivită pentru ${vipItemsCount} bilete VIP`,
+                            `Fits ${vipItemsCount} VIP tickets`,
+                          )
+                        : tr(
+                            `Nu încape comanda (${vipItemsCount} locuri)`,
+                            `Order does not fit (${vipItemsCount} seats)`,
+                          )}
                     </span>
                   </button>
                 );
@@ -512,9 +527,12 @@ export default function VipClient() {
 
           <div className="p-4 border-t border-[#4C2A85] bg-[#1A0B2E] text-center">
             <p className="text-xs text-indigo-300">
-              Toate mesele au capacitate de 6 persoane.
+              {tr(
+                "Toate mesele au capacitate de 6 persoane.",
+                "All tables have a capacity of 6 people.",
+              )}
               {isLoadingAvailability
-                ? " (se actualizează disponibilitatea...)"
+                ? tr(" (se actualizează disponibilitatea...)", " (updating availability...)")
                 : ""}
             </p>
           </div>
@@ -558,7 +576,7 @@ export default function VipClient() {
         )}
       >
         <span className="text-xs font-bold uppercase tracking-wider mb-1 opacity-80">
-          Mesele
+          {tr("Mese", "Tables")}
         </span>
         <span className="text-2xl font-black">{label}</span>
         {!disabled && (
@@ -568,7 +586,7 @@ export default function VipClient() {
               isZoneSelected && "opacity-100 bottom-[-3rem]",
             )}
           >
-            {price} RON / Masă
+            {price} RON / {tr("Masă", "Table")}
           </div>
         )}
         {isZoneSelected && (
@@ -598,10 +616,10 @@ export default function VipClient() {
               <div className="flex flex-col gap-3 mb-6">
                 <div className="flex gap-6 justify-between items-end">
                   <p className="text-white text-base font-medium leading-normal">
-                    Progres Rezervare
+                    {tr("Progres Rezervare", "Booking progress")}
                   </p>
                   <p className="text-accent-cyan/80 text-sm font-normal leading-normal">
-                    Pasul 2 din 3
+                    {tr("Pasul 2 din 3", "Step 2 of 3")}
                   </p>
                 </div>
                 <div className="h-2 w-full rounded-full bg-[#341C61]">
@@ -615,56 +633,58 @@ export default function VipClient() {
               <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
                 <div>
                   <h1 className="text-white text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em] mb-2 drop-shadow-md">
-                    Alege Zona VIP
+                    {tr("Alege Zona VIP", "Choose VIP area")}
                   </h1>
                   <p className="text-indigo-200 text-base font-normal">
-                    Selectează o masă și alocă exact numărul de locuri VIP din
-                    comandă.
+                    {tr(
+                      "Selectează o masă și alocă exact numărul de locuri VIP din comandă.",
+                      "Select a table and allocate exactly the number of VIP seats from your order.",
+                    )}
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-4 text-sm font-medium bg-[#341C61]/50 p-3 rounded-lg border border-[#4C2A85]">
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full border-2 border-accent-gold bg-transparent shadow-[0_0_5px_rgba(255,215,0,0.4)]"></div>
-                    <span className="text-white">Disponibil</span>
+                    <span className="text-white">{tr("Disponibil", "Available")}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full bg-accent-cyan border-2 border-accent-cyan shadow-[0_0_8px_rgba(0,229,255,0.6)]"></div>
                     <span className="text-[#130026] font-bold bg-accent-cyan px-1 rounded-sm">
-                      Selectat
+                      {tr("Selectat", "Selected")}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full bg-[#4C2A85] border-2 border-[#4C2A85]"></div>
-                    <span className="text-indigo-300">Rezervat</span>
+                    <span className="text-indigo-300">{tr("Rezervat", "Reserved")}</span>
                   </div>
                 </div>
 
                 {!isLoadingOrder && orderData && (
                   <div className="mt-4 rounded-lg border border-[#4C2A85] bg-[#241242]/60 p-3 text-sm text-indigo-100">
                     <p className="font-semibold text-white">
-                      Rezervare din coș
+                      {tr("Rezervare din coș", "Cart reservation")}
                     </p>
                     <p className="mt-1">
-                      Bilete VIP în comandă:{" "}
+                      {tr("Bilete VIP în comandă:", "VIP tickets in order:")}{" "}
                       <span className="font-bold text-accent-gold">
                         {vipItemsCount}
                       </span>
                     </p>
                     <p>
-                      Mese VIP selectate:{" "}
+                      {tr("Mese VIP selectate:", "VIP tables selected:")}{" "}
                       <span className="font-bold text-white">
                         {vipTablesSelectedCount} / {vipTablesRequired}
                       </span>
                     </p>
                     <p>
-                      Locuri VIP de alocat:{" "}
+                      {tr("Locuri VIP de alocat:", "VIP seats to allocate:")}{" "}
                       <span className="font-bold text-white">
                         {requiredVipSeats}
                       </span>
                     </p>
                     <p>
-                      Total coș curent:{" "}
+                      {tr("Total coș curent:", "Current cart total:")}{" "}
                       <span className="font-bold text-accent-cyan">
                         {orderTotalAmount} RON
                       </span>
@@ -686,24 +706,25 @@ export default function VipClient() {
               <div className="rounded-2xl border border-[#4C2A85] bg-[#1A0B2E]/80 backdrop-blur p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-white text-sm font-semibold">Alocare VIP</p>
+                    <p className="text-white text-sm font-semibold">{tr("Alocare VIP", "VIP allocation")}</p>
                     <p className="text-indigo-200 text-xs mt-1">
-                      Ai{" "}
-                      <span className="font-bold text-accent-gold">{requiredVipSeats}</span>{" "}
-                      bilete VIP în comandă. Alege o zonă, apoi o masă.
+                      {tr(
+                        `Ai ${requiredVipSeats} bilete VIP în comandă. Alege o zonă, apoi o masă.`,
+                        `You have ${requiredVipSeats} VIP tickets in your order. Choose an area, then a table.`,
+                      )}
                     </p>
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div className="rounded-lg border border-[#4C2A85] bg-[#241242]/40 px-3 py-2">
-                        <p className="text-xs font-bold text-white">Stânga scenei</p>
-                        <p className="text-[11px] text-indigo-200">Mesele 1–100</p>
+                        <p className="text-xs font-bold text-white">{tr("Stânga scenei", "Left of the stage")}</p>
+                        <p className="text-[11px] text-indigo-200">{tr("Mesele 1–100", "Tables 1–100")}</p>
                       </div>
                       <div className="rounded-lg border border-accent-cyan/30 bg-accent-cyan/5 px-3 py-2">
-                        <p className="text-xs font-bold text-white">Mijloc</p>
-                        <p className="text-[11px] text-indigo-200">Fan Pit (în fața scenei)</p>
+                        <p className="text-xs font-bold text-white">{tr("Mijloc", "Center")}</p>
+                        <p className="text-[11px] text-indigo-200">{tr("Fan Pit (în fața scenei)", "Fan Pit (in front of the stage)")}</p>
                       </div>
                       <div className="rounded-lg border border-[#4C2A85] bg-[#241242]/40 px-3 py-2">
-                        <p className="text-xs font-bold text-white">Dreapta scenei</p>
-                        <p className="text-[11px] text-indigo-200">Mesele 101–200</p>
+                        <p className="text-xs font-bold text-white">{tr("Dreapta scenei", "Right of the stage")}</p>
+                        <p className="text-[11px] text-indigo-200">{tr("Mesele 101–200", "Tables 101–200")}</p>
                       </div>
                     </div>
                   </div>
@@ -718,9 +739,9 @@ export default function VipClient() {
                         : "border-[#4C2A85] bg-[#241242] text-white hover:bg-[#341C61] hover:text-accent-cyan",
                     )}
                     disabled={isLoadingAvailability}
-                    title="Reîncarcă disponibilitatea"
+                    title={tr("Reîncarcă disponibilitatea", "Reload availability")}
                   >
-                    {isLoadingAvailability ? "Se actualizează..." : "Refresh"}
+                    {isLoadingAvailability ? tr("Se actualizează...", "Updating...") : tr("Refresh", "Refresh")}
                   </button>
                 </div>
 
@@ -787,15 +808,15 @@ export default function VipClient() {
                   <div className="mt-5 rounded-xl border border-accent-gold/20 bg-[#241242]/50 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-white font-bold">{selectedTable}</p>
+                        <p className="text-white font-bold">{displayTableLabel(selectedTable)}</p>
                         <p className="text-indigo-200 text-xs mt-1">
-                          Locuri libere acum:{" "}
+                          {tr("Locuri libere acum:", "Seats available now:")}{" "}
                           <span className="font-bold text-white">{availableSeatsForSelectedTable}</span>
                         </p>
                         <p className="text-indigo-200 text-xs mt-1">
-                          Trebuie să aloci exact{" "}
+                          {tr("Trebuie să aloci exact", "You must allocate exactly")}{" "}
                           <span className="font-bold text-white">{requiredVipSeats}</span>{" "}
-                          locuri VIP.
+                          {tr("locuri VIP.", "VIP seats.")}
                         </p>
                       </div>
                       <button
@@ -803,7 +824,7 @@ export default function VipClient() {
                         onClick={() => setSelectedTable(null)}
                         className="text-xs text-indigo-200 hover:text-red-300"
                       >
-                        Șterge
+                        {tr("Șterge", "Remove")}
                       </button>
                     </div>
 
@@ -846,10 +867,10 @@ export default function VipClient() {
                         )}
                       >
                         {isSavingAllocation
-                          ? "Se salvează..."
+                          ? tr("Se salvează...", "Saving...")
                           : canContinue
-                            ? "Continuă"
-                            : `Mai ai ${remainingVipSeats} de alocat`}
+                            ? tr("Continuă", "Continue")
+                            : tr(`Mai ai ${remainingVipSeats} de alocat`, `${remainingVipSeats} left to allocate`)}
                         <span className="material-symbols-outlined text-lg">arrow_forward</span>
                       </button>
                     </div>
@@ -863,8 +884,14 @@ export default function VipClient() {
                       )}
                     >
                       {selectedSeats === requiredVipSeats
-                        ? `Alocare completă: ${selectedSeats}/${requiredVipSeats}`
-                        : `Alocare incompletă: ${selectedSeats}/${requiredVipSeats}`}
+                        ? tr(
+                            `Alocare completă: ${selectedSeats}/${requiredVipSeats}`,
+                            `Complete allocation: ${selectedSeats}/${requiredVipSeats}`,
+                          )
+                        : tr(
+                            `Alocare incompletă: ${selectedSeats}/${requiredVipSeats}`,
+                            `Incomplete allocation: ${selectedSeats}/${requiredVipSeats}`,
+                          )}
                     </p>
                   </div>
                 )}
@@ -875,21 +902,23 @@ export default function VipClient() {
             <div className="hidden lg:flex items-center justify-center">
               <div className="relative w-[1000px] h-[700px] bg-[#1A0B2E] rounded-3xl border border-[#4C2A85] shadow-2xl shadow-purple-900/30 p-8 select-none transform scale-90 xl:scale-100 origin-center transition-transform">
                 <div className="absolute right-6 top-6 z-20 rounded-xl border border-[#4C2A85] bg-[#241242]/80 backdrop-blur p-3 min-w-[250px]">
-                  <p className="text-white text-sm font-semibold">Alocare VIP</p>
+                  <p className="text-white text-sm font-semibold">
+                    {tr("Alocare VIP", "VIP allocation")}
+                  </p>
                   <p className="text-indigo-200 text-xs mt-1">
-                    Ai{" "}
-                    <span className="font-bold text-accent-gold">{requiredVipSeats}</span>{" "}
-                    bilete VIP în comandă. Alege o masă cu minim{" "}
-                    {requiredVipSeats || 1} locuri disponibile.
+                    {tr(
+                      `Ai ${requiredVipSeats} bilete VIP în comandă. Alege o masă cu minim ${requiredVipSeats || 1} locuri disponibile.`,
+                      `You have ${requiredVipSeats} VIP tickets in your order. Choose a table with at least ${requiredVipSeats || 1} seats available.`,
+                    )}
                   </p>
                   {selectedTable ? (
                     <div className="mt-2 text-xs text-indigo-100 space-y-1">
                       <p>
-                        Masă selectată:{" "}
-                        <span className="font-bold text-white">{selectedTable}</span>
+                        {tr("Masă selectată:", "Selected table:")}{" "}
+                        <span className="font-bold text-white">{displayTableLabel(selectedTable)}</span>
                       </p>
                       <p>
-                        Locuri disponibile:{" "}
+                        {tr("Locuri disponibile:", "Seats available:")}{" "}
                         <span className="font-bold text-white">
                           {availableSeatsForSelectedTable}
                         </span>
@@ -897,16 +926,16 @@ export default function VipClient() {
                     </div>
                   ) : (
                     <p className="mt-2 text-xs text-indigo-300">
-                      Nu ai selectat încă o masă.
+                      {tr("Nu ai selectat încă o masă.", "You haven't selected a table yet.")}
                     </p>
                   )}
                 </div>
 
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-32 bg-gradient-to-b from-accent-cyan/20 to-transparent rounded-b-[4rem] border-b border-l border-r border-accent-cyan/30 flex items-center justify-center shadow-[0_10px_50px_-10px_rgba(0,229,255,0.2)] z-0">
                   <div className="text-center">
-                    <span className="text-accent-cyan font-black tracking-[0.3em] text-2xl uppercase drop-shadow-[0_0_10px_rgba(0,229,255,0.8)] block">
-                      Scenă Principală
-                    </span>
+                  <span className="text-accent-cyan font-black tracking-[0.3em] text-2xl uppercase drop-shadow-[0_0_10px_rgba(0,229,255,0.8)] block">
+                    {tr("Scenă Principală", "Main Stage")}
+                  </span>
                     <div className="w-full h-1 bg-accent-cyan/50 mt-2 rounded-full blur-[2px]"></div>
                   </div>
                 </div>
@@ -919,15 +948,15 @@ export default function VipClient() {
                     Fan Pit
                   </span>
                   <span className="text-accent-cyan/60 text-sm font-bold tracking-wider mt-2">
-                    Zona din mijloc (Fan Pit)
+                    {tr("Zona din mijloc (Fan Pit)", "Center area (Fan Pit)")}
                   </span>
                 </div>
 
                 <div className="absolute left-12 top-28">
                   <div className="inline-flex items-center gap-2 rounded-lg border border-[#4C2A85] bg-[#241242]/70 px-3 py-2 text-xs text-indigo-100">
                     <span className="material-symbols-outlined text-sm text-accent-gold">arrow_back</span>
-                    <span className="font-semibold text-white">Stânga scenei</span>
-                    <span className="text-indigo-200">(mesele 1–100)</span>
+                    <span className="font-semibold text-white">{tr("Stânga scenei", "Left of the stage")}</span>
+                    <span className="text-indigo-200">{tr("(mesele 1–100)", "(tables 1–100)")}</span>
                   </div>
                 </div>
                 <div className="absolute left-12 top-40 grid grid-cols-2 gap-6">
@@ -963,8 +992,8 @@ export default function VipClient() {
 
                 <div className="absolute right-12 top-28">
                   <div className="inline-flex items-center gap-2 rounded-lg border border-[#4C2A85] bg-[#241242]/70 px-3 py-2 text-xs text-indigo-100">
-                    <span className="text-indigo-200">(mesele 101–200)</span>
-                    <span className="font-semibold text-white">Dreapta scenei</span>
+                    <span className="text-indigo-200">{tr("(mesele 101–200)", "(tables 101–200)")}</span>
+                    <span className="font-semibold text-white">{tr("Dreapta scenei", "Right of the stage")}</span>
                     <span className="material-symbols-outlined text-sm text-accent-gold">arrow_forward</span>
                   </div>
                 </div>
@@ -1016,20 +1045,20 @@ export default function VipClient() {
                       <span className="material-symbols-outlined">table_bar</span>
                     </div>
                     <div>
-                      <h3 className="text-white font-bold text-lg">{selectedTable}</h3>
+                      <h3 className="text-white font-bold text-lg">{displayTableLabel(selectedTable)}</h3>
                       <p className="text-indigo-200 text-sm flex items-center gap-1">
                         <span className="material-symbols-outlined text-sm">
                           groups
                         </span>{" "}
-                        {TABLE_CAPACITY} Persoane / Masă
+                        {TABLE_CAPACITY} {tr("Persoane / Masă", "People / table")}
                       </p>
                       <p className="text-xs text-indigo-300 mt-1">
-                        Trebuie să aloci exact{" "}
+                        {tr("Trebuie să aloci exact", "You must allocate exactly")}{" "}
                         <span className="font-bold text-white">{requiredVipSeats}</span>{" "}
-                        locuri VIP.
+                        {tr("locuri VIP.", "VIP seats.")}
                       </p>
                       <p className="text-xs text-indigo-300 mt-1">
-                        Locuri libere acum:{" "}
+                        {tr("Locuri libere acum:", "Seats available now:")}{" "}
                         <span className="font-bold text-white">
                           {availableSeatsForSelectedTable}
                         </span>
@@ -1040,7 +1069,7 @@ export default function VipClient() {
                   <div className="flex flex-col items-start md:items-end gap-2">
                     <div className="flex items-center gap-3 rounded-lg border border-[#4C2A85] bg-[#1A0B2E]/70 p-2">
                       <span className="text-xs text-indigo-200 px-1">
-                        Locuri VIP
+                        {tr("Locuri VIP", "VIP seats")}
                       </span>
                       <button
                         type="button"
@@ -1089,8 +1118,14 @@ export default function VipClient() {
                       )}
                     >
                       {selectedSeats === requiredVipSeats
-                        ? `Alocare completă: ${selectedSeats}/${requiredVipSeats} locuri`
-                        : `Alocare incompletă: ${selectedSeats}/${requiredVipSeats} locuri`}
+                        ? tr(
+                            `Alocare completă: ${selectedSeats}/${requiredVipSeats} locuri`,
+                            `Complete allocation: ${selectedSeats}/${requiredVipSeats} seats`,
+                          )
+                        : tr(
+                            `Alocare incompletă: ${selectedSeats}/${requiredVipSeats} locuri`,
+                            `Incomplete allocation: ${selectedSeats}/${requiredVipSeats} seats`,
+                          )}
                     </p>
                   </div>
                 </div>
@@ -1105,17 +1140,17 @@ export default function VipClient() {
               <span className="material-symbols-outlined text-accent-gold">
                 receipt_long
               </span>
-              Sumar Comandă
+              {tr("Sumar Comandă", "Order summary")}
             </h3>
             <div className="space-y-6">
               <div className="pb-6 border-b border-[#4C2A85]">
                 <h4 className="text-white font-bold text-sm mb-3">
-                  Bilete selectate
+                  {tr("Bilete selectate", "Selected tickets")}
                 </h4>
 
                 {isLoadingOrder ? (
                   <div className="rounded-lg border border-dashed border-[#4C2A85] p-4 text-sm text-indigo-300">
-                    Se încarcă comanda...
+                    {tr("Se încarcă comanda...", "Loading order...")}
                   </div>
                 ) : loadError ? (
                   <div className="rounded-lg border border-rose-400/30 bg-rose-500/10 p-4 text-sm text-rose-200">
@@ -1157,7 +1192,7 @@ export default function VipClient() {
                             )}
                             {!!item.selectedDayCodes?.length && (
                               <p className="text-indigo-300 text-xs mt-1">
-                                Zile:{" "}
+                                {tr("Zile:", "Days:")}{" "}
                                 {item.selectedDayCodes.join(", ").toUpperCase()}
                               </p>
                             )}
@@ -1174,7 +1209,7 @@ export default function VipClient() {
                   </div>
                 ) : (
                   <div className="rounded-lg border border-dashed border-[#4C2A85] p-4 text-sm text-indigo-300">
-                    Nu există date de comandă pentru acest token.
+                    {tr("Nu există date de comandă pentru acest token.", "No order data for this token.")}
                   </div>
                 )}
               </div>
@@ -1190,18 +1225,18 @@ export default function VipClient() {
                     </div>
                     <div>
                       <h4 className="text-accent-gold font-bold text-sm">
-                        Masă VIP selectată
+                        {tr("Masă VIP selectată", "Selected VIP table")}
                       </h4>
-                      <p className="text-white text-xs">{selectedTable}</p>
+                      <p className="text-white text-xs">{displayTableLabel(selectedTable)}</p>
                       <p className="text-indigo-200 text-xs mt-1">
-                        Locuri VIP alocate:{" "}
+                        {tr("Locuri VIP alocate:", "VIP seats allocated:")}{" "}
                         <span className="font-bold text-white">
                           {selectedSeats}
                         </span>{" "}
                         / {requiredVipSeats}
                       </p>
                       <p className="text-indigo-200 text-xs mt-1">
-                        Locuri libere acum:{" "}
+                        {tr("Locuri libere acum:", "Seats available now:")}{" "}
                         <span className="font-bold text-white">
                           {availableSeatsForSelectedTable}
                         </span>
@@ -1209,9 +1244,9 @@ export default function VipClient() {
                     </div>
                   </div>
                   <ul className="text-indigo-200 text-xs space-y-1 pl-13 mb-3 list-disc list-inside">
-                    <li>Intrare Prioritară</li>
-                    <li>1x Sticlă Premium Vodka</li>
-                    <li>Servire la masă</li>
+                    <li>{tr("Intrare Prioritară", "Priority entry")}</li>
+                    <li>{tr("1x Sticlă Premium Vodka", "1x Premium vodka bottle")}</li>
+                    <li>{tr("Servire la masă", "Table service")}</li>
                   </ul>
                   <div className="flex justify-between items-center pt-3 border-t border-[#4C2A85]/50">
                     <button
@@ -1222,12 +1257,12 @@ export default function VipClient() {
                       <span className="material-symbols-outlined text-sm">
                         delete
                       </span>{" "}
-                      Șterge
+                      {tr("Șterge", "Remove")}
                     </button>
                     <span className="text-accent-gold font-bold text-sm drop-shadow-[0_0_5px_rgba(255,215,0,0.3)]">
                       {selectedSeats === requiredVipSeats
-                        ? "Alocare completă"
-                        : "Alocare incompletă"}
+                        ? tr("Alocare completă", "Complete allocation")
+                        : tr("Alocare incompletă", "Incomplete allocation")}
                     </span>
                   </div>
                 </div>
@@ -1237,14 +1272,14 @@ export default function VipClient() {
 
           <div className="p-6 bg-[#0F0518] border-t border-[#4C2A85]">
             <div className="flex justify-between items-end mb-2">
-              <span className="text-indigo-200 text-sm">Subtotal bilete</span>
+              <span className="text-indigo-200 text-sm">{tr("Subtotal bilete", "Tickets subtotal")}</span>
               <span className="text-white font-medium">
                 {orderTotalAmount} RON
               </span>
             </div>
             <div className="flex justify-between items-end mb-2">
               <span className="text-indigo-200 text-sm">
-                Locuri VIP alocate
+                {tr("Locuri VIP alocate", "VIP seats allocated")}
               </span>
               <span className="text-white font-medium">
                 {selectedSeats} / {requiredVipSeats}
@@ -1252,21 +1287,23 @@ export default function VipClient() {
             </div>
             <div className="flex justify-between items-end mb-6">
               <span className="text-indigo-200 text-sm">
-                Masă VIP selectată
+                {tr("Masă VIP selectată", "Selected VIP table")}
               </span>
               <span className="text-white font-medium">
-                {selectedTable ? "Inclus în biletul VIP" : "0 RON"}
+                {selectedTable ? tr("Inclus în biletul VIP", "Included in VIP") : "0 RON"}
               </span>
             </div>
             <div className="flex justify-between items-end mb-6 pt-4 border-t border-[#4C2A85]">
-              <span className="text-white text-lg font-bold">Total</span>
+              <span className="text-white text-lg font-bold">{tr("Total", "Total")}</span>
               <span className="text-accent-gold text-2xl font-black drop-shadow-[0_0_8px_rgba(255,215,0,0.4)]">
                 {orderTotalAmount} RON
               </span>
             </div>
             <p className="mb-4 text-xs text-indigo-300">
-              Selectarea mesei și alocarea exactă a locurilor VIP este
-              obligatorie înainte de finalizarea comenzii.
+              {tr(
+                "Selectarea mesei și alocarea exactă a locurilor VIP este obligatorie înainte de finalizarea comenzii.",
+                "Selecting a table and allocating the exact number of VIP seats is required before completing your order.",
+              )}
             </p>
             <div className="flex gap-3">
               <Link
@@ -1277,7 +1314,7 @@ export default function VipClient() {
                 }
                 className="px-4 py-3 rounded-lg border border-[#4C2A85] text-white font-bold text-sm hover:bg-[#341C61] hover:text-accent-cyan transition-colors w-1/3 text-center flex items-center justify-center"
               >
-                Înapoi
+                {tr("Înapoi", "Back")}
               </Link>
               <button
                 type="button"
@@ -1291,14 +1328,17 @@ export default function VipClient() {
                 )}
               >
                 {isSavingAllocation
-                  ? "Se salvează alocarea..."
+                  ? tr("Se salvează alocarea...", "Saving allocation...")
                   : isLoadingOrder
-                    ? "Se încarcă comanda..."
+                    ? tr("Se încarcă comanda...", "Loading order...")
                     : selectedTable
                       ? canContinue
-                        ? "Continuă la checkout"
-                        : `Alocă toate locurile (${remainingVipSeats} rămase)`
-                      : "Selectează o masă"}
+                        ? tr("Continuă la checkout", "Continue to checkout")
+                        : tr(
+                            `Alocă toate locurile (${remainingVipSeats} rămase)`,
+                            `Allocate all seats (${remainingVipSeats} remaining)`,
+                          )
+                      : tr("Selectează o masă", "Select a table")}
                 <span className="material-symbols-outlined text-lg group-hover:translate-x-1 transition-transform">
                   arrow_forward
                 </span>

@@ -129,6 +129,8 @@ function formatDays(canonicalDaySet: unknown) {
     .join(", ");
 }
 
+type Lang = "ro" | "en";
+
 async function fetchTicketsPublic(
   token: string,
 ): Promise<TicketsPublicResponse> {
@@ -155,8 +157,10 @@ async function fetchTicketsPublic(
   return normalized;
 }
 
-export default function SuccessClient() {
+export default function SuccessClient({ lang = "ro" }: { lang?: Lang }) {
   const searchParams = useSearchParams();
+  const isEn = lang === "en";
+  const tr = (ro: string, en: string) => (isEn ? en : ro);
 
   const sessionId = searchParams?.get("session_id") ?? null;
   const tokenFromQuery =
@@ -303,19 +307,31 @@ export default function SuccessClient() {
 
   const titleText =
     paymentState === "paid"
-      ? "Plata a fost confirmată"
+      ? tr("Plata a fost confirmată", "Payment confirmed")
       : paymentState === "pending" || isPolling
-        ? "Plata este în curs de confirmare"
-        : "Mulțumim pentru comandă";
+        ? tr("Plata este în curs de confirmare", "Payment is being confirmed")
+        : tr("Mulțumim pentru comandă", "Thanks for your order");
 
   const subtitleText =
     paymentState === "paid"
       ? hasTickets
-        ? "Biletele tale sunt generate. Salvează PDF-ul și păstrează QR-urile pentru intrare."
-        : "Plata e confirmată. Dacă biletele nu apar în 1-2 minute, dă refresh sau contactează suportul."
+        ? tr(
+            "Biletele tale sunt generate. Salvează PDF-ul și păstrează QR-urile pentru intrare.",
+            "Your tickets are ready. Download the PDF and keep the QR codes for entry.",
+          )
+        : tr(
+            "Plata e confirmată. Dacă biletele nu apar în 1-2 minute, dă refresh sau contactează suportul.",
+            "Payment is confirmed. If tickets don't show up in 1–2 minutes, refresh or contact support.",
+          )
       : paymentState === "pending" || isPolling
-        ? "Am primit redirecționarea de la Stripe. Așteptăm confirmarea finală și emiterea biletelor."
-        : "Dacă plata a fost efectuată, statusul se va actualiza în scurt timp.";
+        ? tr(
+            "Am primit redirecționarea de la Stripe. Așteptăm confirmarea finală și emiterea biletelor.",
+            "We received the redirect from Stripe. Waiting for final confirmation and ticket issuance.",
+          )
+        : tr(
+            "Dacă plata a fost efectuată, statusul se va actualiza în scurt timp.",
+            "If the payment was completed, the status will update shortly.",
+          );
 
   const pdfHref = tokenFromQuery
     ? `/api/tickets/pdf?token=${encodeURIComponent(tokenFromQuery)}`
@@ -360,7 +376,7 @@ export default function SuccessClient() {
                   {/* Email sent badge */}
                   {data?.tickets_email_sent ? (
                     <span className="px-2 py-1 rounded-md border border-[#432C7A] text-emerald-200 bg-emerald-500/10">
-                      Email trimis
+                      {tr("Email trimis", "Email sent")}
                     </span>
                   ) : null}
                 </div>
@@ -377,8 +393,11 @@ export default function SuccessClient() {
           {(isLoading || isPolling) && (
             <section className="rounded-2xl border border-[#432C7A] bg-[#24123E]/70 p-4 text-[#B39DDB]">
               {isLoading
-                ? "Se încarcă biletele..."
-                : "Se verifică confirmarea / emiterea biletelor..."}
+                ? tr("Se încarcă biletele...", "Loading tickets...")
+                : tr(
+                    "Se verifică confirmarea / emiterea biletelor...",
+                    "Checking confirmation / issuing tickets...",
+                  )}
             </section>
           )}
 
@@ -386,9 +405,9 @@ export default function SuccessClient() {
           <section className="bg-[#2D1B4E]/70 backdrop-blur-md rounded-2xl p-6 border border-[#432C7A] shadow-xl">
             <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-white text-xl font-bold">Bilete & PDF</h2>
+                <h2 className="text-white text-xl font-bold">{tr("Bilete & PDF", "Tickets & PDF")}</h2>
                 <p className="text-[#B39DDB] text-sm mt-1">
-                  Dacă ești la intrare, poți arăta QR-ul direct de aici.
+                  {tr("Dacă ești la intrare, poți arăta QR-ul direct de aici.", "At the entrance, you can show the QR code directly from here.")}
                 </p>
               </div>
 
@@ -400,7 +419,7 @@ export default function SuccessClient() {
                   <span className="material-symbols-outlined text-[18px]">
                     confirmation_number
                   </span>
-                  Înapoi la bilete
+                  {tr("Înapoi la bilete", "Back to tickets")}
                 </Link>
 
                 <a
@@ -415,7 +434,7 @@ export default function SuccessClient() {
                   <span className="material-symbols-outlined text-[18px]">
                     download
                   </span>
-                  Descarcă PDF
+                  {tr("Descarcă PDF", "Download PDF")}
                 </a>
               </div>
             </div>
@@ -424,7 +443,7 @@ export default function SuccessClient() {
           {/* Tickets with SVG QR */}
           {hasTickets ? (
             <section className="bg-[#2D1B4E]/70 backdrop-blur-md rounded-2xl p-6 border border-[#432C7A] shadow-xl">
-              <h2 className="text-white text-xl font-bold mb-4">QR bilete</h2>
+              <h2 className="text-white text-xl font-bold mb-4">{tr("QR bilete", "Ticket QR codes")}</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {(data?.tickets || []).map((t) => {
@@ -475,13 +494,13 @@ export default function SuccessClient() {
                           />
                         ) : (
                           <div className="text-sm text-slate-500">
-                            Se generează QR...
+                            {tr("Se generează QR...", "Generating QR...")}
                           </div>
                         )}
                       </div>
 
                       <p className="mt-3 text-xs text-[#B39DDB]">
-                        Prezintă acest QR la intrare.
+                        {tr("Prezintă acest QR la intrare.", "Show this QR code at the entrance.")}
                       </p>
                     </div>
                   );

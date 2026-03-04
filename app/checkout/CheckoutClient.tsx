@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+type Lang = "ro" | "en";
+
 interface DraftOrderItem {
   id: string;
   qty?: number;
@@ -78,12 +80,19 @@ function normalizeTicketTitle(title: string) {
     .trim();
 }
 
-function formatLei(value: number) {
+function formatMoney(value: number, lang: Lang, currency: string | undefined) {
   const safe = Number.isFinite(value) ? value : 0;
-  return `${new Intl.NumberFormat("ro-RO", {
+  const locale = lang === "en" ? "en-US" : "ro-RO";
+  const cur = (currency || "RON").toUpperCase();
+
+  const amount = new Intl.NumberFormat(locale, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(safe)} lei`;
+  }).format(safe);
+
+  // Display number + lei (RO) / RON (EN)
+  const unit = cur === "RON" ? (lang === "en" ? "RON" : "lei") : cur;
+  return `${amount} ${unit}`;
 }
 
 function toNumber(value: unknown) {
@@ -99,15 +108,17 @@ function toNumber(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeDayCodeLabel(day: string) {
+function normalizeDayCodeLabel(day: string, lang: Lang) {
   const d = String(day || "")
     .trim()
     .toUpperCase();
-  if (d === "FRI") return "Vineri";
-  if (d === "SAT") return "Sâmbătă";
-  if (d === "SUN") return "Duminică";
-  if (d === "MON") return "Luni";
-  return d || "Zi necunoscută";
+
+  if (d === "FRI") return lang === "en" ? "Friday" : "Vineri";
+  if (d === "SAT") return lang === "en" ? "Saturday" : "Sâmbătă";
+  if (d === "SUN") return lang === "en" ? "Sunday" : "Duminică";
+  if (d === "MON") return lang === "en" ? "Monday" : "Luni";
+
+  return lang === "en" ? "Unknown day" : "Zi necunoscută";
 }
 
 function parseCanonicalDaySet(value: unknown): string[] {
@@ -385,30 +396,32 @@ function extractOrderFromApi(payload: unknown): DraftOrder | null {
     customerEmail:
       (typeof candidate.customerEmail === "string" &&
         candidate.customerEmail) ||
-      (typeof candidate.customer_email === "string" &&
-        candidate.customer_email) ||
+      (typeof (candidate as any).customer_email === "string" &&
+        (candidate as any).customer_email) ||
       undefined,
     customerPhone:
       (typeof candidate.customerPhone === "string" &&
         candidate.customerPhone) ||
-      (typeof candidate.customer_phone === "string" &&
-        candidate.customer_phone) ||
+      (typeof (candidate as any).customer_phone === "string" &&
+        (candidate as any).customer_phone) ||
       undefined,
     billingCity:
-      (typeof candidate.billingCity === "string" && candidate.billingCity) ||
-      (typeof candidate.billing_city === "string" && candidate.billing_city) ||
+      (typeof (candidate as any).billingCity === "string" &&
+        (candidate as any).billingCity) ||
+      (typeof (candidate as any).billing_city === "string" &&
+        (candidate as any).billing_city) ||
       undefined,
     billingCounty:
-      (typeof candidate.billingCounty === "string" &&
-        candidate.billingCounty) ||
-      (typeof candidate.billing_county === "string" &&
-        candidate.billing_county) ||
+      (typeof (candidate as any).billingCounty === "string" &&
+        (candidate as any).billingCounty) ||
+      (typeof (candidate as any).billing_county === "string" &&
+        (candidate as any).billing_county) ||
       undefined,
     billingAddress:
-      (typeof candidate.billingAddress === "string" &&
-        candidate.billingAddress) ||
-      (typeof candidate.billing_address === "string" &&
-        candidate.billing_address) ||
+      (typeof (candidate as any).billingAddress === "string" &&
+        (candidate as any).billingAddress) ||
+      (typeof (candidate as any).billing_address === "string" &&
+        (candidate as any).billing_address) ||
       undefined,
 
     items: normalizedItems,
@@ -436,11 +449,6 @@ async function fetchOrderByToken(
 
 /**
  * ✅ Source of truth for VIP allocation: API (not sessionStorage)
- *
- * This tries, in order:
- * 1) GET /api/order/{token} and looks for allocations-like fields
- * 2) GET /api/order/{token}/vip-allocation (if you have it)
- * 3) (optional fallback) sessionStorage if nothing else works
  */
 async function fetchVipAllocationsFromApi(
   orderToken: string,
@@ -507,7 +515,7 @@ async function fetchVipAllocationsFromApi(
     // ignore
   }
 
-  // 3) optional fallback (keeps old behavior if you don't yet have a GET endpoint)
+  // 3) optional fallback
   try {
     const rawVipAlloc = window.sessionStorage.getItem(
       VIP_ALLOCATIONS_STORAGE_KEY,
@@ -523,17 +531,17 @@ async function fetchVipAllocationsFromApi(
   return [];
 }
 
-export default function CheckoutClient() {
+export default function CheckoutClient({ lang = "ro" }: { lang?: Lang }) {
+  const isEn = lang === "en";
+  const tr = (ro: string, en: string) => (isEn ? en : ro);
+
   const searchParams = useSearchParams();
   const queryToken = searchParams?.get("order") ?? null;
 
   const [orderDraft, setOrderDraft] = useState<DraftOrder | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // legacy single table (old UI)
   const [selectedVipTable, setSelectedVipTable] = useState<string | null>(null);
-
-  // ✅ now filled from API, not from sessionStorage
   const [vipAllocations, setVipAllocations] = useState<VipAllocationDraft[]>(
     [],
   );
@@ -545,7 +553,6 @@ export default function CheckoutClient() {
   const [billingEmail, setBillingEmail] = useState("");
   const [billingPhone, setBillingPhone] = useState("");
 
-  // ✅ payment status UX
   const isPaid = (orderDraft?.status || "").toLowerCase() === "paid";
   const isPending =
     (orderDraft?.status || "").toLowerCase().includes("pending") ||
@@ -593,10 +600,7 @@ export default function CheckoutClient() {
           return;
         }
 
-        // 1) order (source of truth)
         const apiOrder = await fetchOrderByToken(resolvedToken);
-
-        // 2) vip allocations (source of truth)
         const apiVipAllocations =
           await fetchVipAllocationsFromApi(resolvedToken);
 
@@ -613,7 +617,6 @@ export default function CheckoutClient() {
 
           if (apiOrder?.publicToken) setPublicOrderToken(apiOrder.publicToken);
 
-          // Option A: hydrate only email if backend provides it
           if (apiOrder) {
             setBillingEmail(apiOrder.customerEmail ?? "");
             setBillingPhone(apiOrder.customerPhone ?? "");
@@ -627,7 +630,12 @@ export default function CheckoutClient() {
           setSelectedVipTable(null);
           setVipAllocations([]);
           setPublicOrderToken(null);
-          setCheckoutError("Nu am putut încărca datele comenzii.");
+          setCheckoutError(
+            tr(
+              "Nu am putut încărca datele comenzii.",
+              "Could not load order data.",
+            ),
+          );
         }
       } finally {
         if (!cancelled) setIsLoaded(true);
@@ -635,13 +643,11 @@ export default function CheckoutClient() {
     }
 
     void loadCheckoutData();
-
     return () => {
       cancelled = true;
     };
   }, [queryToken]);
 
-  // ✅ Poll until Stripe webhook confirms (status becomes "paid")
   useEffect(() => {
     if (!publicOrderToken) return;
     if (!orderDraft) return;
@@ -649,7 +655,6 @@ export default function CheckoutClient() {
     const status = String(orderDraft.status || "").toLowerCase();
     if (status === "paid") return;
 
-    // only poll when it makes sense
     if (!status || status.includes("draft") || status.includes("created"))
       return;
 
@@ -733,7 +738,6 @@ export default function CheckoutClient() {
   const hasVipItems = vipItemsCount > 0;
   const requiresVipTable = hasVipItems;
 
-  // Legacy compatibility if API doesn't return allocations but returns selection
   const hasLegacyVipSelection = !!selectedVipTable;
   const hasNewVipAllocations = vipAllocations.length > 0;
 
@@ -746,7 +750,6 @@ export default function CheckoutClient() {
         0,
       );
 
-      // if frontend can't validate per day, validate total count
       if (requiredVipSeatsByDay.size === 0)
         return totalAllocated === vipItemsCount;
 
@@ -778,16 +781,16 @@ export default function CheckoutClient() {
   const safeDisplayTotal = Number.isFinite(subtotal) ? subtotal : 0;
 
   const payLabel = orderDraft
-    ? `Plătește ${formatLei(safeDisplayTotal)}`
-    : "Plătește";
+    ? tr(
+        `Plătește ${formatMoney(safeDisplayTotal, lang, orderDraft?.currency)}`,
+        `Pay ${formatMoney(safeDisplayTotal, lang, orderDraft?.currency)}`,
+      )
+    : tr("Plătește", "Pay");
 
   const isBillingFormComplete = useMemo(() => {
     const email = billingEmail.trim();
     const phone = billingPhone.trim();
-
-    // Email is mandatory + must look like an email.
     const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
     return emailLooksValid && phone.length > 0;
   }, [billingEmail, billingPhone]);
 
@@ -807,10 +810,12 @@ export default function CheckoutClient() {
 
     if (vipAllocations.length > 0) {
       return vipAllocations.map((a, idx) => {
-        const days = (a.dayCodes || []).map(normalizeDayCodeLabel).join(", ");
+        const days = (a.dayCodes || [])
+          .map((d) => normalizeDayCodeLabel(d, lang))
+          .join(", ");
         return {
           key: `${a.tableLabel || a.tableId || "Masa"}-${idx}`,
-          label: a.tableLabel || a.tableId || "Masă VIP",
+          label: a.tableLabel || a.tableId || tr("Masă VIP", "VIP table"),
           days,
           seats: toNumber(a.seats),
         };
@@ -829,25 +834,26 @@ export default function CheckoutClient() {
     }
 
     return [];
-  }, [hasVipItems, vipAllocations, selectedVipTable, vipItemsCount]);
+  }, [hasVipItems, vipAllocations, selectedVipTable, vipItemsCount, lang]);
 
   const vipStatusText = useMemo(() => {
     if (!hasVipItems) return null;
 
     if (vipAllocations.length > 0) {
       return isVipAllocationComplete
-        ? "Alocare VIP completă"
-        : "Alocare VIP incompletă";
+        ? tr("Alocare VIP completă", "VIP allocation complete")
+        : tr("Alocare VIP incompletă", "VIP allocation incomplete");
     }
 
     return selectedVipTable
-      ? "Masă VIP selectată"
-      : "Nicio masă selectată încă";
+      ? tr("Masă VIP selectată", "VIP table selected")
+      : tr("Nicio masă selectată încă", "No table selected yet");
   }, [
     hasVipItems,
     vipAllocations.length,
     isVipAllocationComplete,
     selectedVipTable,
+    tr,
   ]);
 
   async function handleStartCheckout() {
@@ -856,19 +862,28 @@ export default function CheckoutClient() {
     setCheckoutError(null);
     setIsCreatingCheckout(true);
 
-    // Guard: enforce valid email and phone even if button logic changes.
     const email = billingEmail.trim();
     const phone = billingPhone.trim();
     const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
     if (!emailLooksValid) {
-      setCheckoutError("Te rugăm să introduci o adresă de email validă.");
+      setCheckoutError(
+        tr(
+          "Te rugăm să introduci o adresă de email validă.",
+          "Please enter a valid email address.",
+        ),
+      );
       setIsCreatingCheckout(false);
       return;
     }
 
     if (!phone) {
-      setCheckoutError("Te rugăm să introduci un număr de telefon.");
+      setCheckoutError(
+        tr(
+          "Te rugăm să introduci un număr de telefon.",
+          "Please enter a phone number.",
+        ),
+      );
       setIsCreatingCheckout(false);
       return;
     }
@@ -884,14 +899,11 @@ export default function CheckoutClient() {
           orderToken: publicOrderToken,
           token: publicOrderToken,
           publicToken: publicOrderToken,
-          email: email,
+          email,
           customer_email: email,
-          phone: phone,
+          phone,
           customer_phone: phone,
-          customer: {
-            email: email,
-            phone: phone,
-          },
+          customer: { email, phone },
         }),
       });
 
@@ -904,7 +916,10 @@ export default function CheckoutClient() {
         const message =
           (typeof payload.error === "string" && payload.error) ||
           (typeof payload.message === "string" && payload.message) ||
-          `Nu am putut porni plata (${res.status}).`;
+          tr(
+            `Nu am putut porni plata (${res.status}).`,
+            `Could not start payment (${res.status}).`,
+          );
         throw new Error(message);
       }
 
@@ -920,7 +935,10 @@ export default function CheckoutClient() {
 
       if (!checkoutUrl) {
         throw new Error(
-          "Răspunsul de la server nu conține URL-ul Stripe Checkout.",
+          tr(
+            "Răspunsul de la server nu conține URL-ul Stripe Checkout.",
+            "Server response did not include the Stripe Checkout URL.",
+          ),
         );
       }
 
@@ -933,14 +951,16 @@ export default function CheckoutClient() {
       setCheckoutError(
         error instanceof Error
           ? error.message
-          : "A apărut o eroare la inițierea plății.",
+          : tr(
+              "A apărut o eroare la inițierea plății.",
+              "An error occurred while starting the payment.",
+            ),
       );
     } finally {
       setIsCreatingCheckout(false);
     }
   }
 
-  // UI below is unchanged stylistically; only behavior changed above.
   return (
     <div className="bg-[#1A0B2E] text-slate-100 font-display min-h-screen flex flex-col antialiased selection:bg-[#00E5FF] selection:text-[#1A0B2E]">
       <main className="flex-grow w-full max-w-7xl mx-auto px-4 lg:px-10 py-8 lg:py-12 relative z-10">
@@ -954,10 +974,10 @@ export default function CheckoutClient() {
               <div className="flex flex-col gap-3 mb-2">
                 <div className="flex gap-6 justify-between items-end">
                   <p className="text-white text-base font-medium leading-normal">
-                    Progres Rezervare
+                    {tr("Progres Rezervare", "Booking progress")}
                   </p>
                   <p className="text-[#00E5FF]/80 text-sm font-normal leading-normal">
-                    Pasul 3 din 3
+                    {tr("Pasul 3 din 3", "Step 3 of 3")}
                   </p>
                 </div>
                 <div className="h-2 w-full rounded-full bg-[#341C61]">
@@ -970,23 +990,28 @@ export default function CheckoutClient() {
 
               <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight flex items-center gap-3">
                 <span className="w-1.5 h-8 bg-gradient-to-b from-[#00E5FF] to-[#7C4DFF] rounded-full block"></span>
-                Finalizare Comandă
+                {tr("Finalizare Comandă", "Checkout")}
               </h1>
               <p className="text-[#B39DDB] text-base font-normal pl-5">
-                Completează detaliile pentru a primi biletele Banaton Fest 2026 pe email.
+                {tr(
+                  "Completează detaliile pentru a primi biletele Banaton Fest 2026 pe email.",
+                  "Enter your details to receive your Banaton Fest 2026 tickets by email.",
+                )}
               </p>
             </div>
 
             {isPaid && (
               <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-emerald-100">
-                Plata este confirmată. Poți merge la pagina de bilete /
-                confirmare.
+                {tr(
+                  "Plata este confirmată. Poți merge la pagina de bilete / confirmare.",
+                  "Payment confirmed. You can go to your tickets / confirmation page.",
+                )}
                 <div className="mt-3">
                   <Link
                     href={`/success?order=${encodeURIComponent(publicOrderToken || "")}`}
                     className="text-[#00E5FF] hover:underline"
                   >
-                    Vezi confirmarea
+                    {tr("Vezi confirmarea", "View confirmation")}
                   </Link>
                 </div>
               </div>
@@ -994,27 +1019,31 @@ export default function CheckoutClient() {
 
             {isPending && !isPaid && (
               <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-amber-100">
-                Așteptăm confirmarea plății (Stripe webhook). Status comanda:{" "}
+                {tr(
+                  "Așteptăm confirmarea plății (Stripe webhook). Status comanda:",
+                  "Waiting for payment confirmation (Stripe webhook). Order status:",
+                )}{" "}
                 <span className="font-semibold">
                   {orderDraft?.status || "pending"}
                 </span>
               </div>
             )}
 
-            {/* Date facturare */}
+            {/* Date pentru bilete */}
             <section className="bg-[#2D1B4E]/70 backdrop-blur-md rounded-2xl p-6 border border-[#432C7A] shadow-xl">
               <div className="flex items-center gap-4 mb-6 border-b border-[#432C7A] pb-4">
                 <div className="flex items-center justify-center w-10 h-10 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/30 font-bold text-lg shadow-[0_0_15px_rgba(0,229,255,0.3)]">
                   1
                 </div>
                 <h3 className="text-white text-xl font-bold tracking-tight">
-                  Date pentru bilete
+                  {tr("Date pentru bilete", "Ticket details")}
                 </h3>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <label className="flex flex-col gap-2 md:col-span-2 group">
                   <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
-                    Adresă de Email
+                    {tr("Adresă de Email", "Email address")}
                   </span>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
@@ -1036,12 +1065,16 @@ export default function CheckoutClient() {
                     <span className="material-symbols-outlined text-[14px]">
                       info
                     </span>
-                    Biletele vor fi trimise la această adresă.
+                    {tr(
+                      "Biletele vor fi trimise la această adresă.",
+                      "Tickets will be sent to this address.",
+                    )}
                   </p>
                 </label>
+
                 <label className="flex flex-col gap-2 md:col-span-2 group">
                   <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
-                    Telefon
+                    {tr("Telefon", "Phone")}
                   </span>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
@@ -1059,7 +1092,6 @@ export default function CheckoutClient() {
                 </label>
               </div>
             </section>
-
           </div>
 
           {/* Sidebar */}
@@ -1072,7 +1104,7 @@ export default function CheckoutClient() {
                     <span className="material-symbols-outlined text-[#FFD700]">
                       shopping_cart
                     </span>
-                    Sumar Comandă
+                    {tr("Sumar Comandă", "Order summary")}
                   </h3>
                 </div>
 
@@ -1080,29 +1112,37 @@ export default function CheckoutClient() {
                   <div className="flex flex-col gap-4">
                     {!isLoaded ? (
                       <div className="text-[#B39DDB] text-sm bg-[#1A0B2E]/30 p-4 rounded-xl border border-[#432C7A]">
-                        Se încarcă sumarul comenzii...
+                        {tr(
+                          "Se încarcă sumarul comenzii...",
+                          "Loading order summary...",
+                        )}
                       </div>
                     ) : !publicOrderToken ? (
                       <div className="text-[#B39DDB] text-sm bg-[#1A0B2E]/30 p-4 rounded-xl border border-[#432C7A]">
-                        Lipsește tokenul comenzii din URL.{" "}
+                        {tr(
+                          "Lipsește tokenul comenzii din URL.",
+                          "Missing order token in URL.",
+                        )}{" "}
                         <Link
                           href="/tickets"
                           className="text-[#00E5FF] hover:underline"
                         >
-                          Mergi la bilete
+                          {tr("Mergi la bilete", "Go to tickets")}
                         </Link>
                       </div>
                     ) : !orderDraft || orderDraft.items.length === 0 ? (
                       <div className="text-[#B39DDB] text-sm bg-[#1A0B2E]/30 p-4 rounded-xl border border-[#432C7A]">
-                        Nu există produse în comandă sau comanda nu a putut fi
-                        încărcată.{" "}
+                        {tr(
+                          "Nu există produse în comandă sau comanda nu a putut fi încărcată.",
+                          "There are no items in the order or the order could not be loaded.",
+                        )}{" "}
                         <Link
                           href="/tickets"
                           className="text-[#00E5FF] hover:underline"
                         >
-                          Mergi la bilete
+                          {tr("Mergi la bilete", "Go to tickets")}
                         </Link>{" "}
-                        pentru a selecta biletele.
+                        {tr("pentru a selecta biletele.", "to select tickets.")}
                       </div>
                     ) : (
                       <>
@@ -1129,8 +1169,11 @@ export default function CheckoutClient() {
 
                           const displayNameRaw =
                             item.name || item.label || "Bilet";
-                          const displayName = normalizeTicketTitle(displayNameRaw);
-                          const categoryLabel = displayCategoryLabel(item.category);
+                          const displayName =
+                            normalizeTicketTitle(displayNameRaw);
+                          const categoryLabel = displayCategoryLabel(
+                            item.category,
+                          );
 
                           return (
                             <div
@@ -1156,7 +1199,11 @@ export default function CheckoutClient() {
                                     {categoryLabel} - {displayName}
                                   </span>
                                   <span className="text-[#FFD700] font-bold text-sm whitespace-nowrap">
-                                    {formatLei(lineTotal)}
+                                    {formatMoney(
+                                      lineTotal,
+                                      lang,
+                                      orderDraft?.currency,
+                                    )}
                                   </span>
                                 </div>
                                 <div className="flex justify-between items-center mt-1 gap-2">
@@ -1164,7 +1211,12 @@ export default function CheckoutClient() {
                                     {item.variantLabel
                                       ? `${item.variantLabel} · `
                                       : ""}
-                                    {safeQty} x {formatLei(fallbackUnitPrice)}
+                                    {safeQty} x{" "}
+                                    {formatMoney(
+                                      fallbackUnitPrice,
+                                      lang,
+                                      orderDraft?.currency,
+                                    )}
                                   </span>
                                 </div>
                               </div>
@@ -1177,10 +1229,16 @@ export default function CheckoutClient() {
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="text-white font-bold text-sm">
-                                  Rezervare masă VIP
+                                  {tr(
+                                    "Rezervare masă VIP",
+                                    "VIP table reservation",
+                                  )}
                                 </p>
                                 <p className="text-[#B39DDB] text-xs mt-1">
-                                  Obligatorie pentru biletele VIP selectate.
+                                  {tr(
+                                    "Obligatorie pentru biletele VIP selectate.",
+                                    "Required for VIP tickets.",
+                                  )}
                                 </p>
                               </div>
                               <span className="material-symbols-outlined text-[#FFD700]">
@@ -1213,8 +1271,11 @@ export default function CheckoutClient() {
                                           {row.label}
                                         </span>
                                         <span className="text-[#FFD700] text-xs font-semibold">
-                                          {row.seats} loc
-                                          {row.seats === 1 ? "" : "uri"}
+                                          {row.seats}{" "}
+                                          {tr(
+                                            `loc${row.seats === 1 ? "" : "uri"}`,
+                                            `seat${row.seats === 1 ? "" : "s"}`,
+                                          )}
                                         </span>
                                       </div>
                                       {row.days ? (
@@ -1227,7 +1288,10 @@ export default function CheckoutClient() {
                                 </div>
                               ) : (
                                 <p className="text-amber-200 mt-2">
-                                  Nicio masă selectată încă
+                                  {tr(
+                                    "Nicio masă selectată încă",
+                                    "No table selected yet",
+                                  )}
                                 </p>
                               )}
                             </div>
@@ -1238,8 +1302,11 @@ export default function CheckoutClient() {
                                 className="text-xs px-3 py-2 rounded-lg border border-[#432C7A] bg-[#24123E] text-[#00E5FF] hover:text-white hover:border-[#00E5FF]/50 transition-colors"
                               >
                                 {vipAllocationSummary.length > 0
-                                  ? "Modifică alocarea VIP"
-                                  : "Alege masa"}
+                                  ? tr(
+                                      "Modifică alocarea VIP",
+                                      "Edit VIP allocation",
+                                    )
+                                  : tr("Alege masa", "Choose table")}
                               </Link>
                             </div>
                           </div>
@@ -1252,9 +1319,11 @@ export default function CheckoutClient() {
 
                   <div className="flex flex-col gap-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-[#B39DDB]">Subtotal</span>
+                      <span className="text-[#B39DDB]">
+                        {tr("Subtotal", "Subtotal")}
+                      </span>
                       <span className="text-white font-medium">
-                        {formatLei(subtotal)}
+                        {formatMoney(subtotal, lang, orderDraft?.currency)}
                       </span>
                     </div>
                   </div>
@@ -1262,18 +1331,23 @@ export default function CheckoutClient() {
                   <div className="flex justify-between items-end border-t border-dashed border-[#432C7A] pt-4 mt-2">
                     <div className="flex flex-col">
                       <span className="text-[#B39DDB] text-xs uppercase tracking-wider font-semibold mb-1">
-                        Total de plată
+                        {tr("Total de plată", "Total")}
                       </span>
                       <span className="text-3xl font-extrabold text-white tracking-tight drop-shadow-md">
-                        {new Intl.NumberFormat("ro-RO", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 2,
-                        }).format(safeDisplayTotal)}{" "}
+                        {new Intl.NumberFormat(
+                          lang === "en" ? "en-US" : "ro-RO",
+                          {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2,
+                          },
+                        ).format(safeDisplayTotal)}{" "}
                         <span className="text-lg text-[#00E5FF]">
-                          {(orderDraft?.currency || "RON").toLowerCase() ===
-                          "ron"
-                            ? "lei"
-                            : orderDraft?.currency || "RON"}
+                          {(orderDraft?.currency || "RON").toUpperCase() ===
+                          "RON"
+                            ? lang === "en"
+                              ? "RON"
+                              : "lei"
+                            : (orderDraft?.currency || "RON").toUpperCase()}
                         </span>
                       </span>
                     </div>
@@ -1281,8 +1355,10 @@ export default function CheckoutClient() {
 
                   {!isVipAllocationComplete && hasVipItems && (
                     <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                      Ai bilete VIP în comandă. Finalizează alocarea meselor VIP
-                      înainte de finalizarea comenzii.
+                      {tr(
+                        "Ai bilete VIP în comandă. Finalizează alocarea meselor VIP înainte de finalizarea comenzii.",
+                        "You have VIP tickets in your order. Complete VIP table allocation before checkout.",
+                      )}
                     </div>
                   )}
 
@@ -1291,7 +1367,10 @@ export default function CheckoutClient() {
                     orderDraft.items.length > 0 &&
                     !isPaid && (
                       <div className="rounded-xl border border-[#432C7A] bg-[#24123E]/70 p-3 text-sm text-[#D1C4E9]">
-                        {"Completează emailul și numărul de telefon pentru a continua plata."}
+                        {tr(
+                          "Completează emailul și numărul de telefon pentru a continua plata.",
+                          "Enter your email and phone number to continue.",
+                        )}
                       </div>
                     )}
 
@@ -1309,7 +1388,10 @@ export default function CheckoutClient() {
                       <span className="material-symbols-outlined font-bold">
                         verified
                       </span>
-                      Plata confirmată — Vezi biletele
+                      {tr(
+                        "Plata confirmată — Vezi biletele",
+                        "Payment confirmed — View tickets",
+                      )}
                     </Link>
                   ) : canProceedToPayment ? (
                     <button
@@ -1325,7 +1407,9 @@ export default function CheckoutClient() {
                       <span className="material-symbols-outlined font-bold group-hover:rotate-12 transition-transform">
                         {isCreatingCheckout ? "progress_activity" : "lock_open"}
                       </span>
-                      {isCreatingCheckout ? "Se inițiază plata..." : payLabel}
+                      {isCreatingCheckout
+                        ? tr("Se inițiază plata...", "Starting payment...")
+                        : payLabel}
                     </button>
                   ) : (
                     <Link
@@ -1346,16 +1430,18 @@ export default function CheckoutClient() {
                             : "arrow_back"}
                       </span>
                       {!isBillingFormComplete
-                        ? "Completează datele"
+                        ? tr("Completează datele", "Complete details")
                         : hasVipItems
-                          ? "Alege masa VIP"
-                          : "Mergi la bilete"}
+                          ? tr("Alege masa VIP", "Choose VIP table")
+                          : tr("Mergi la bilete", "Go to tickets")}
                     </Link>
                   )}
 
                   <p className="text-xs text-[#B39DDB] text-center mt-2">
-                    Vei fi redirecționat către pagina securizată Stripe pentru a
-                    finaliza plata.
+                    {tr(
+                      "Vei fi redirecționat către pagina securizată Stripe pentru a finaliza plata.",
+                      "You will be redirected to Stripe’s secure page to complete payment.",
+                    )}
                   </p>
                 </div>
               </div>
@@ -1368,10 +1454,13 @@ export default function CheckoutClient() {
                 </div>
                 <div className="flex flex-col">
                   <span className="text-white text-sm font-bold">
-                    Ai nevoie de ajutor?
+                    {tr("Ai nevoie de ajutor?", "Need help?")}
                   </span>
                   <span className="text-[#B39DDB] text-xs">
-                    Pentru orice întrebare sau problemă legată de comandă, scrie-ne la{" "}
+                    {tr(
+                      "Pentru orice întrebare sau problemă legată de comandă, scrie-ne la ",
+                      "For any questions or issues related to your order, email us at ",
+                    )}
                     <a
                       className="text-[#00E5FF] hover:text-white hover:underline transition-colors"
                       href="mailto:office.banaton@gmail.com"
