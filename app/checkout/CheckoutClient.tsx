@@ -551,6 +551,7 @@ export default function CheckoutClient({ lang = "ro" }: { lang?: Lang }) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   const [billingEmail, setBillingEmail] = useState("");
+  const [billingEmailConfirm, setBillingEmailConfirm] = useState("");
   const [billingPhone, setBillingPhone] = useState("");
 
   const isPaid = (orderDraft?.status || "").toLowerCase() === "paid";
@@ -789,10 +790,13 @@ export default function CheckoutClient({ lang = "ro" }: { lang?: Lang }) {
 
   const isBillingFormComplete = useMemo(() => {
     const email = billingEmail.trim();
+    const emailConfirm = billingEmailConfirm.trim();
     const phone = billingPhone.trim();
     const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    return emailLooksValid && phone.length > 0;
-  }, [billingEmail, billingPhone]);
+    const emailsMatch = email === emailConfirm;
+
+    return emailLooksValid && emailsMatch && phone.length > 0;
+  }, [billingEmail, billingEmailConfirm, billingPhone]);
 
   const canProceedToPayment =
     !!orderDraft &&
@@ -863,6 +867,7 @@ export default function CheckoutClient({ lang = "ro" }: { lang?: Lang }) {
     setIsCreatingCheckout(true);
 
     const email = billingEmail.trim();
+    const emailConfirm = billingEmailConfirm.trim();
     const phone = billingPhone.trim();
     const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -871,6 +876,17 @@ export default function CheckoutClient({ lang = "ro" }: { lang?: Lang }) {
         tr(
           "Te rugăm să introduci o adresă de email validă.",
           "Please enter a valid email address.",
+        ),
+      );
+      setIsCreatingCheckout(false);
+      return;
+    }
+
+    if (email !== emailConfirm) {
+      setCheckoutError(
+        tr(
+          "Adresele de email nu coincid. Te rugăm să verifici.",
+          "Email addresses do not match. Please verify.",
         ),
       );
       setIsCreatingCheckout(false);
@@ -1041,7 +1057,8 @@ export default function CheckoutClient({ lang = "ro" }: { lang?: Lang }) {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <label className="flex flex-col gap-2 md:col-span-2 group">
+                {/* Email Field */}
+                <label className="flex flex-col gap-2 md:col-span-1 group">
                   <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
                     {tr("Adresă de Email", "Email address")}
                   </span>
@@ -1050,43 +1067,64 @@ export default function CheckoutClient({ lang = "ro" }: { lang?: Lang }) {
                       mail
                     </span>
                     <input
-                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
-                      placeholder="ion.popescu@email.com"
                       type="email"
                       value={billingEmail}
                       onChange={(e) => setBillingEmail(e.target.value)}
-                      disabled={isPaid}
-                      required
-                      autoComplete="email"
-                      inputMode="email"
+                      placeholder="nume@exemplu.com"
+                      className="w-full bg-[#1A0B2E] border border-[#432C7A] rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all shadow-inner"
                     />
                   </div>
-                  <p className="text-xs text-[#B39DDB] mt-0.5 flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">
-                      info
-                    </span>
-                    {tr(
-                      "Biletele vor fi trimise la această adresă.",
-                      "Tickets will be sent to this address.",
-                    )}
-                  </p>
                 </label>
 
+                {/* Confirm Email Field */}
+                <label className="flex flex-col gap-2 md:col-span-1 group">
+                  <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
+                    {tr("Confirmă Email", "Confirm Email")}
+                  </span>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
+                      mark_email_read
+                    </span>
+                    <input
+                      type="email"
+                      value={billingEmailConfirm}
+                      onChange={(e) => setBillingEmailConfirm(e.target.value)}
+                      placeholder="nume@exemplu.com"
+                      className={`w-full bg-[#1A0B2E] border rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 transition-all shadow-inner ${
+                        billingEmailConfirm.length > 0 &&
+                        billingEmail !== billingEmailConfirm
+                          ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                          : "border-[#432C7A] focus:border-[#00E5FF] focus:ring-[#00E5FF]"
+                      }`}
+                    />
+                  </div>
+                  {/* Optional validation message */}
+                  {billingEmailConfirm.length > 0 &&
+                    billingEmail !== billingEmailConfirm && (
+                      <span className="text-red-400 text-xs mt-1">
+                        {tr(
+                          "Adresele de email nu coincid.",
+                          "Emails do not match.",
+                        )}
+                      </span>
+                    )}
+                </label>
+
+                {/* Phone Field */}
                 <label className="flex flex-col gap-2 md:col-span-2 group">
                   <span className="text-slate-200 text-sm font-medium group-focus-within:text-[#00E5FF] transition-colors">
                     {tr("Telefon", "Phone")}
                   </span>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#B39DDB] group-focus-within:text-[#00E5FF] transition-colors">
-                      call
+                      phone
                     </span>
                     <input
-                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#24123E] border border-[#432C7A] text-white placeholder:text-gray-500 focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all duration-200"
-                      placeholder="07xx xxx xxx"
                       type="tel"
                       value={billingPhone}
                       onChange={(e) => setBillingPhone(e.target.value)}
-                      disabled={isPaid}
+                      placeholder="07XX XXX XXX"
+                      className="w-full bg-[#1A0B2E] border border-[#432C7A] rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-all shadow-inner"
                     />
                   </div>
                 </label>
@@ -1094,386 +1132,135 @@ export default function CheckoutClient({ lang = "ro" }: { lang?: Lang }) {
             </section>
           </div>
 
-          {/* Sidebar */}
-          <div className="lg:col-span-5 xl:col-span-4 relative">
-            <div className="sticky top-28 flex flex-col gap-6">
-              <div className="rounded-2xl bg-[#2D1B4E] border border-[#432C7A] overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-                <div className="bg-[#24123E] px-6 py-5 border-b border-[#432C7A] flex items-center justify-between relative overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#00E5FF]/10 to-transparent"></div>
-                  <h3 className="text-white text-lg font-bold relative z-10 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#FFD700]">
-                      shopping_cart
-                    </span>
-                    {tr("Sumar Comandă", "Order summary")}
-                  </h3>
+          {/* Sidebar Sumar Comandă */}
+          <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-6">
+            <div className="bg-[#2D1B4E]/70 backdrop-blur-md rounded-2xl p-6 border border-[#432C7A] shadow-xl sticky top-8">
+              <h3 className="text-white text-xl font-bold tracking-tight mb-6 pb-4 border-b border-[#432C7A]">
+                {tr("Sumar Comandă", "Order Summary")}
+              </h3>
+
+              {!isLoaded ? (
+                <div className="text-center text-[#B39DDB] py-8">
+                  <span className="material-symbols-outlined animate-spin text-3xl mb-2 text-[#00E5FF]">
+                    sync
+                  </span>
+                  <p>{tr("Încărcare...", "Loading...")}</p>
                 </div>
-
-                <div className="p-6 flex flex-col gap-6">
-                  <div className="flex flex-col gap-4">
-                    {!isLoaded ? (
-                      <div className="text-[#B39DDB] text-sm bg-[#1A0B2E]/30 p-4 rounded-xl border border-[#432C7A]">
-                        {tr(
-                          "Se încarcă sumarul comenzii...",
-                          "Loading order summary...",
-                        )}
-                      </div>
-                    ) : !publicOrderToken ? (
-                      <div className="text-[#B39DDB] text-sm bg-[#1A0B2E]/30 p-4 rounded-xl border border-[#432C7A]">
-                        {tr(
-                          "Lipsește tokenul comenzii din URL.",
-                          "Missing order token in URL.",
-                        )}{" "}
-                        <Link
-                          href="/tickets"
-                          className="text-[#00E5FF] hover:underline"
-                        >
-                          {tr("Mergi la bilete", "Go to tickets")}
-                        </Link>
-                      </div>
-                    ) : !orderDraft || orderDraft.items.length === 0 ? (
-                      <div className="text-[#B39DDB] text-sm bg-[#1A0B2E]/30 p-4 rounded-xl border border-[#432C7A]">
-                        {tr(
-                          "Nu există produse în comandă sau comanda nu a putut fi încărcată.",
-                          "There are no items in the order or the order could not be loaded.",
-                        )}{" "}
-                        <Link
-                          href="/tickets"
-                          className="text-[#00E5FF] hover:underline"
-                        >
-                          {tr("Mergi la bilete", "Go to tickets")}
-                        </Link>{" "}
-                        {tr("pentru a selecta biletele.", "to select tickets.")}
-                      </div>
-                    ) : (
-                      <>
-                        {orderDraft.items.map((item) => {
-                          const safeQty = toNumber(item.qty ?? item.quantity);
-                          const safeUnitPrice = toNumber(
-                            item.unitPrice ?? item.price,
-                          );
-                          const savedLineTotal = toNumber(
-                            item.totalPrice ?? item.lineTotal,
-                          );
-
-                          const fallbackUnitPrice =
-                            safeUnitPrice > 0
-                              ? safeUnitPrice
-                              : orderDraft.items.length === 1 && safeQty > 0
-                                ? subtotal / safeQty
-                                : 0;
-
-                          const lineTotal =
-                            savedLineTotal > 0
-                              ? savedLineTotal
-                              : safeQty * fallbackUnitPrice;
-
-                          const displayNameRaw =
-                            item.name || item.label || "Bilet";
-                          const displayName =
-                            normalizeTicketTitle(displayNameRaw);
-                          const categoryLabel = displayCategoryLabel(
-                            item.category,
-                          );
-
-                          return (
-                            <div
-                              key={item.id}
-                              className="flex justify-between items-start gap-3 group bg-[#1A0B2E]/30 p-3 rounded-xl border border-transparent hover:border-[#00E5FF]/30 transition-all"
-                            >
-                              <div className="w-14 h-14 rounded-lg shrink-0 border border-[#432C7A] shadow-sm bg-[#24123E] flex items-center justify-center">
-                                <span
-                                  className={`material-symbols-outlined text-xl ${
-                                    item.category === "vip"
-                                      ? "text-[#FFD700]"
-                                      : "text-[#00E5FF]"
-                                  }`}
-                                >
-                                  {item.category === "vip"
-                                    ? "star"
-                                    : "confirmation_number"}
-                                </span>
-                              </div>
-                              <div className="flex flex-col grow">
-                                <div className="flex justify-between items-start gap-2">
-                                  <span className="text-white font-bold text-sm">
-                                    {categoryLabel} - {displayName}
-                                  </span>
-                                  <span className="text-[#FFD700] font-bold text-sm whitespace-nowrap">
-                                    {formatMoney(
-                                      lineTotal,
-                                      lang,
-                                      orderDraft?.currency,
-                                    )}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-center mt-1 gap-2">
-                                  <span className="text-[#B39DDB] text-xs bg-[#24123E] px-2 py-0.5 rounded">
-                                    {item.variantLabel
-                                      ? `${item.variantLabel} · `
-                                      : ""}
-                                    {safeQty} x{" "}
-                                    {formatMoney(
-                                      fallbackUnitPrice,
-                                      lang,
-                                      orderDraft?.currency,
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-
-                        {hasVipItems && (
-                          <div className="rounded-xl border border-[#FFD700]/25 bg-[#FFD700]/5 p-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-white font-bold text-sm">
-                                  {tr(
-                                    "Rezervare masă VIP",
-                                    "VIP table reservation",
-                                  )}
-                                </p>
-                                <p className="text-[#B39DDB] text-xs mt-1">
-                                  {tr(
-                                    "Obligatorie pentru biletele VIP selectate.",
-                                    "Required for VIP tickets.",
-                                  )}
-                                </p>
-                              </div>
-                              <span className="material-symbols-outlined text-[#FFD700]">
-                                table_restaurant
-                              </span>
-                            </div>
-
-                            <div className="mt-3 text-sm">
-                              {vipStatusText && (
-                                <p
-                                  className={
-                                    isVipAllocationComplete
-                                      ? "text-emerald-200"
-                                      : "text-amber-200"
-                                  }
-                                >
-                                  {vipStatusText}
-                                </p>
-                              )}
-
-                              {vipAllocationSummary.length > 0 ? (
-                                <div className="mt-2 space-y-2">
-                                  {vipAllocationSummary.map((row) => (
-                                    <div
-                                      key={row.key}
-                                      className="rounded-lg bg-[#24123E]/80 border border-[#432C7A] px-3 py-2"
-                                    >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="text-white font-medium">
-                                          {row.label}
-                                        </span>
-                                        <span className="text-[#FFD700] text-xs font-semibold">
-                                          {row.seats}{" "}
-                                          {tr(
-                                            `loc${row.seats === 1 ? "" : "uri"}`,
-                                            `seat${row.seats === 1 ? "" : "s"}`,
-                                          )}
-                                        </span>
-                                      </div>
-                                      {row.days ? (
-                                        <p className="text-[#B39DDB] text-xs mt-1">
-                                          {row.days}
-                                        </p>
-                                      ) : null}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-amber-200 mt-2">
-                                  {tr(
-                                    "Nicio masă selectată încă",
-                                    "No table selected yet",
-                                  )}
-                                </p>
-                              )}
-                            </div>
-
-                            <div className="mt-3 flex items-center justify-end">
-                              <Link
-                                href={vipSelectionHref}
-                                className="text-xs px-3 py-2 rounded-lg border border-[#432C7A] bg-[#24123E] text-[#00E5FF] hover:text-white hover:border-[#00E5FF]/50 transition-colors"
-                              >
-                                {vipAllocationSummary.length > 0
-                                  ? tr(
-                                      "Modifică alocarea VIP",
-                                      "Edit VIP allocation",
-                                    )
-                                  : tr("Alege masa", "Choose table")}
-                              </Link>
-                            </div>
+              ) : !orderDraft || orderDraft.items.length === 0 ? (
+                <div className="text-center text-[#B39DDB] py-8">
+                  <p>{tr("Coșul este gol.", "Cart is empty.")}</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-[#432C7A] scrollbar-track-transparent">
+                    {orderDraft.items.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex justify-between items-start border-b border-[#432C7A]/50 pb-4 last:border-0 last:pb-0"
+                      >
+                        <div className="flex-1 pr-4">
+                          <p className="font-semibold text-white">
+                            {normalizeTicketTitle(
+                              item.label || item.name || "",
+                            )}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[#00E5FF] text-xs font-medium px-2 py-0.5 rounded-full bg-[#00E5FF]/10 border border-[#00E5FF]/20">
+                              {displayCategoryLabel(item.category)}
+                            </span>
+                            <span className="text-[#B39DDB] text-sm">
+                              x {item.qty ?? item.quantity}
+                            </span>
                           </div>
-                        )}
-                      </>
-                    )}
+                          {(item.variantLabel || item.durationLabel) && (
+                            <p className="text-[#B39DDB] text-xs mt-1">
+                              {item.variantLabel} {item.durationLabel}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right whitespace-nowrap">
+                          <p className="font-bold text-white">
+                            {formatMoney(
+                              item.totalPrice ?? item.lineTotal ?? 0,
+                              lang,
+                              orderDraft.currency,
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
-                  <div className="h-px bg-gradient-to-r from-transparent via-[#432C7A] to-transparent w-full"></div>
-
-                  <div className="flex flex-col gap-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-[#B39DDB]">
-                        {tr("Subtotal", "Subtotal")}
-                      </span>
-                      <span className="text-white font-medium">
-                        {formatMoney(subtotal, lang, orderDraft?.currency)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-end border-t border-dashed border-[#432C7A] pt-4 mt-2">
-                    <div className="flex flex-col">
-                      <span className="text-[#B39DDB] text-xs uppercase tracking-wider font-semibold mb-1">
-                        {tr("Total de plată", "Total")}
-                      </span>
-                      <span className="text-3xl font-extrabold text-white tracking-tight drop-shadow-md">
-                        {new Intl.NumberFormat(
-                          lang === "en" ? "en-US" : "ro-RO",
-                          {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 2,
-                          },
-                        ).format(safeDisplayTotal)}{" "}
-                        <span className="text-lg text-[#00E5FF]">
-                          {(orderDraft?.currency || "RON").toUpperCase() ===
-                          "RON"
-                            ? lang === "en"
-                              ? "RON"
-                              : "lei"
-                            : (orderDraft?.currency || "RON").toUpperCase()}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {!isVipAllocationComplete && hasVipItems && (
-                    <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                      {tr(
-                        "Ai bilete VIP în comandă. Finalizează alocarea meselor VIP înainte de finalizarea comenzii.",
-                        "You have VIP tickets in your order. Complete VIP table allocation before checkout.",
-                      )}
-                    </div>
-                  )}
-
-                  {!canProceedToPayment &&
-                    !!orderDraft &&
-                    orderDraft.items.length > 0 &&
-                    !isPaid && (
-                      <div className="rounded-xl border border-[#432C7A] bg-[#24123E]/70 p-3 text-sm text-[#D1C4E9]">
-                        {tr(
-                          "Completează emailul și numărul de telefon pentru a continua plata.",
-                          "Enter your email and phone number to continue.",
-                        )}
+                  <div className="mt-4 pt-4 border-t border-[#432C7A] space-y-3">
+                    {hasVipItems && vipAllocationSummary.length > 0 && (
+                      <div className="bg-[#1A0B2E] p-3 rounded-lg border border-[#432C7A]/50 mb-4">
+                        <p className="text-xs text-[#B39DDB] mb-2 font-medium uppercase tracking-wider">
+                          {tr("Alocare Mese VIP", "VIP Table Allocation")}
+                        </p>
+                        {vipAllocationSummary.map((alloc) => (
+                          <div
+                            key={alloc.key}
+                            className="flex justify-between text-sm"
+                          >
+                            <span className="text-white">{alloc.label}</span>
+                            <span className="text-[#00E5FF]">
+                              {alloc.seats} locuri
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
 
-                  {checkoutError && (
-                    <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
-                      {checkoutError}
+                    <div className="flex justify-between items-center mb-6">
+                      <span className="text-lg text-slate-300">
+                        {tr("Total de plată", "Total to pay")}
+                      </span>
+                      <span className="text-2xl font-black text-[#00E5FF] drop-shadow-[0_0_8px_rgba(0,229,255,0.4)]">
+                        {formatMoney(
+                          safeDisplayTotal,
+                          lang,
+                          orderDraft.currency,
+                        )}
+                      </span>
                     </div>
-                  )}
 
-                  {isPaid ? (
-                    <Link
-                      href={`/success?order=${encodeURIComponent(publicOrderToken || "")}`}
-                      className="w-full h-14 rounded-xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-2 transform group bg-emerald-400/20 text-emerald-100 border border-emerald-400/30"
+                    {checkoutError && (
+                      <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-xl text-sm mb-4">
+                        {checkoutError}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleStartCheckout}
+                      disabled={!canProceedToPayment || isCreatingCheckout}
+                      className="w-full bg-gradient-to-r from-[#00E5FF] to-[#7C4DFF] text-white font-bold text-lg py-4 rounded-xl shadow-[0_0_20px_rgba(0,229,255,0.3)] hover:shadow-[0_0_30px_rgba(0,229,255,0.5)] transform hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
                     >
-                      <span className="material-symbols-outlined font-bold">
-                        verified
+                      {isCreatingCheckout ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="material-symbols-outlined animate-spin">
+                            sync
+                          </span>
+                          {tr("Se procesează...", "Processing...")}
+                        </span>
+                      ) : (
+                        payLabel
+                      )}
+                    </button>
+
+                    <p className="text-center text-xs text-[#B39DDB] mt-4 flex items-center justify-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">
+                        lock
                       </span>
                       {tr(
-                        "Plata confirmată — Vezi biletele",
-                        "Payment confirmed — View tickets",
+                        "Plată securizată prin Stripe",
+                        "Secured payment by Stripe",
                       )}
-                    </Link>
-                  ) : canProceedToPayment ? (
-                    <button
-                      type="button"
-                      onClick={handleStartCheckout}
-                      disabled={isCreatingCheckout}
-                      className={`w-full h-14 rounded-xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-2 transform group ${
-                        isCreatingCheckout
-                          ? "bg-[#3A2A55] text-[#D1C4E9] border border-[#4E3A72] cursor-wait"
-                          : "bg-gradient-to-r from-[#FFD700] to-[#FDB931] hover:from-[#FFE066] hover:to-[#FDB931] text-[#24123E] shadow-[0_0_20px_rgba(255,215,0,0.3)] hover:shadow-[0_0_30px_rgba(255,215,0,0.5)] active:scale-[0.98]"
-                      }`}
-                    >
-                      <span className="material-symbols-outlined font-bold group-hover:rotate-12 transition-transform">
-                        {isCreatingCheckout ? "progress_activity" : "lock_open"}
-                      </span>
-                      {isCreatingCheckout
-                        ? tr("Se inițiază plata...", "Starting payment...")
-                        : payLabel}
-                    </button>
-                  ) : (
-                    <Link
-                      href={
-                        !isBillingFormComplete
-                          ? "/checkout"
-                          : hasVipItems
-                            ? vipSelectionHref
-                            : "/tickets"
-                      }
-                      className="w-full h-14 rounded-xl font-bold text-lg transition-all duration-300 flex items-center justify-center gap-2 transform group bg-[#24123E] text-[#B39DDB] border border-[#432C7A]"
-                    >
-                      <span className="material-symbols-outlined font-bold group-hover:rotate-12 transition-transform">
-                        {!isBillingFormComplete
-                          ? "edit_note"
-                          : hasVipItems
-                            ? "table_restaurant"
-                            : "arrow_back"}
-                      </span>
-                      {!isBillingFormComplete
-                        ? tr("Completează datele", "Complete details")
-                        : hasVipItems
-                          ? tr("Alege masa VIP", "Choose VIP table")
-                          : tr("Mergi la bilete", "Go to tickets")}
-                    </Link>
-                  )}
-
-                  <p className="text-xs text-[#B39DDB] text-center mt-2">
-                    {tr(
-                      "Vei fi redirecționat către pagina securizată Stripe pentru a finaliza plata.",
-                      "You will be redirected to Stripe’s secure page to complete payment.",
-                    )}
-                  </p>
+                    </p>
+                  </div>
                 </div>
-              </div>
-
-              <div className="rounded-xl bg-[#2D1B4E]/50 border border-[#432C7A] p-4 flex gap-4 items-center shadow-lg backdrop-blur-sm">
-                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[#00E5FF] to-[#7C4DFF] flex items-center justify-center text-white shrink-0 shadow-[0_0_10px_rgba(0,229,255,0.4)]">
-                  <span className="material-symbols-outlined text-[20px]">
-                    support_agent
-                  </span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-white text-sm font-bold">
-                    {tr("Ai nevoie de ajutor?", "Need help?")}
-                  </span>
-                  <span className="text-[#B39DDB] text-xs">
-                    {tr(
-                      "Pentru orice întrebare sau problemă legată de comandă, scrie-ne la ",
-                      "For any questions or issues related to your order, email us at ",
-                    )}
-                    <a
-                      className="text-[#00E5FF] hover:text-white hover:underline transition-colors"
-                      href="mailto:office.banaton@gmail.com"
-                    >
-                      office.banaton@gmail.com
-                    </a>
-                    .
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
-          {/* /Sidebar */}
         </div>
       </main>
     </div>
