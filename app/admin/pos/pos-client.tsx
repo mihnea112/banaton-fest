@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type DayKeyUpper = "FRI" | "SAT" | "SUN" | "MON";
 
@@ -40,6 +40,23 @@ type CreateResponse =
     }
   | { ok: false; error: { message: string } };
 
+
+
+type VipAvailabilityResponse = {
+  ok?: boolean;
+  days?: string[];
+  tables?: Array<{
+    id?: string;
+    label?: string;
+    capacity?: number;
+    remainingMin?: number;
+    remainingByDay?: Record<string, number>;
+  }>;
+  error?: { message?: string };
+};
+
+type DayKeyLower = "fri" | "sat" | "sun" | "mon";
+
 const DAYS: Array<{
   key: DayKeyUpper;
   labelRo: string;
@@ -50,6 +67,15 @@ const DAYS: Array<{
   { key: "SUN", labelRo: "Duminică", dateShort: "31.05" },
   { key: "MON", labelRo: "Luni", dateShort: "01.06" },
 ];
+
+const DAY_UP_TO_LOW: Record<DayKeyUpper, DayKeyLower> = {
+  FRI: "fri",
+  SAT: "sat",
+  SUN: "sun",
+  MON: "mon",
+};
+
+const ALL_DAYS_LOW: DayKeyLower[] = ["fri", "sat", "sun", "mon"];
 
 const PRODUCTS: Array<{
   code: ProductKey;
@@ -195,6 +221,78 @@ export default function PosClient() {
     { ok: true }
   > | null>(null);
 
+  // --- VIP allocation (same flow as /vip) ---
+  const [vipActiveZone, setVipActiveZone] = useState<string | null>(null);
+  const [vipSelectedTable, setVipSelectedTable] = useState<string | null>(null);
+
+  const [vipAvailabilityByLabel, setVipAvailabilityByLabel] = useState<Record<string, number>>({});
+  const [vipAvailLoading, setVipAvailLoading] = useState(false);
+
+  const vipQty = useMemo(() => {
+    return lines
+      .filter((l) => l.productCode.startsWith("VIP"))
+      .reduce((sum, l) => sum + Math.max(1, toInt(l.qty, 1)), 0);
+  }, [lines]);
+
+  const vipDaysUpper = useMemo(() => {
+    const set = new Set<DayKeyUpper>();
+    for (const l of lines) {
+      if (!l.productCode.startsWith("VIP")) continue;
+      // VIP_4DAY has no day selection in POS UI; for allocation treat as all days.
+      if ((l.dayCodes || []).length === 0) {
+        for (const d of DAYS) set.add(d.key);
+      } else {
+        for (const d of l.dayCodes) set.add(d);
+      }
+    }
+    return Array.from(set);
+  }, [lines]);
+
+  const vipDaysLow = useMemo(() => {
+    const out = vipDaysUpper.map((d) => DAY_UP_TO_LOW[d]).filter(Boolean);
+    return out.length ? (Array.from(new Set(out)) as DayKeyLower[]) : [];
+  }, [vipDaysUpper]);
+
+  async function refreshVipAvailability(days: DayKeyLower[]) {
+    if (!days.length) {
+      setVipAvailabilityByLabel({});
+      return;
+    }
+
+    setVipAvailLoading(true);
+    try {
+      const res = await fetch(
+        `/api/vip/availability?days=${encodeURIComponent(days.join(","))}&includeHolds=true`,
+        { cache: "no-store" },
+      );
+
+      const json = (await res.json().catch(() => ({}))) as VipAvailabilityResponse;
+
+      if (!res.ok || !json?.ok) {
+        console.warn("[pos] vip availability failed", { status: res.status, json });
+        setVipAvailabilityByLabel({});
+        return;
+      }
+
+      const map: Record<string, number> = {};
+      for (const t of json.tables || []) {
+        if (t?.label) map[String(t.label)] = toInt(t.remainingMin, 0);
+      }
+      setVipAvailabilityByLabel(map);
+    } catch (e) {
+      console.warn("[pos] vip availability exception", e);
+      setVipAvailabilityByLabel({});
+    } finally {
+      setVipAvailLoading(false);
+    }
+  }
+
+  const vipSeatsRequired = Math.max(0, vipQty);
+  const vipSeatsAvailableForSelected = vipSelectedTable
+    ? (vipAvailabilityByLabel[vipSelectedTable] ?? 6)
+    : 0;
+
+
   const anyVip = useMemo(
     () => lines.some((l) => l.productCode.startsWith("VIP")),
     [lines],
@@ -212,8 +310,39 @@ export default function PosClient() {
     for (const l of lines) {
       if (validateLine(l)) return false;
     }
+    if (anyVip) {
+      if (!vipSelectedTable) return false;
+      if (vipSeatsRequired <= 0) return false;
+      // current implementation supports one table (capacity 6)
+      if (vipSeatsRequired > 6) return false;
+      // best-effort client-side availability guard
+      if (vipSeatsAvailableForSelected > 0 && vipSeatsRequired > vipSeatsAvailableForSelected) return false;
+    }
     return lines.length > 0;
-  }, [sendEmail, email, lines]);
+  }, [sendEmail, email, lines, anyVip, vipSelectedTable, vipSeatsRequired, vipSeatsAvailableForSelected]);
+
+  useEffect(() => {
+    if (!anyVip) {
+      setVipSelectedTable(null);
+      setVipActiveZone(null);
+      return;
+    }
+
+    if (vipDaysLow.length) {
+      void refreshVipAvailability(vipDaysLow);
+    }
+  }, [anyVip, vipDaysLow.join(",")]);
+
+  useEffect(() => {
+    if (!anyVip) return;
+    if (!vipDaysLow.length) return;
+
+    const id = window.setInterval(() => {
+      void refreshVipAvailability(vipDaysLow);
+    }, 15000);
+
+    return () => window.clearInterval(id);
+  }, [anyVip, vipDaysLow.join(",")]);
 
   function updateLine(id: string, patch: Partial<PosLine>) {
     setLines((prev) =>
@@ -299,6 +428,19 @@ export default function PosClient() {
   async function submit() {
     if (!formValid || submitting) return;
 
+    if (anyVip && !vipSelectedTable) {
+      setError("Selectează o masă VIP înainte de a genera biletele.");
+      return;
+    }
+    if (anyVip && vipSeatsRequired > 6) {
+      setError("Comanda are mai mult de 6 locuri VIP. Pentru moment, POS suportă o singură masă (max 6). Împarte în mai multe comenzi.");
+      return;
+    }
+    if (anyVip && vipSelectedTable && vipSeatsAvailableForSelected > 0 && vipSeatsRequired > vipSeatsAvailableForSelected) {
+      setError("Masa selectată nu are suficiente locuri libere pentru zilele VIP. Alege altă masă.");
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     setResult(null);
@@ -317,6 +459,7 @@ export default function PosClient() {
           canonicalDaySet: canonicalDaySetForLine(l),
           variantLabelSnapshot: variantLabelForLine(l),
         })),
+        vip: anyVip && vipSelectedTable ? { tableLabel: vipSelectedTable } : undefined,
       };
 
       const res = await fetch("/api/admin/pos/create", {
@@ -341,8 +484,133 @@ export default function PosClient() {
     }
   }
 
+  // --- VIP UI components ---
+  const VipTableSelectorModal = ({
+    zoneId,
+    onClose,
+  }: {
+    zoneId: string;
+    onClose: () => void;
+  }) => {
+    const [start, end] = zoneId.split("-").map(Number);
+    const tables = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div className="bg-[#1A0B2E] border border-[#4C2A85] rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-[0_0_50px_rgba(127,19,236,0.5)] overflow-hidden">
+          <div className="p-6 border-b border-[#4C2A85] flex justify-between items-center bg-[#241242]">
+            <div>
+              <h3 className="text-white text-xl font-bold">Alege Masa</h3>
+              <p className="text-indigo-300 text-sm">Zona {zoneId}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-indigo-300 hover:text-white transition-colors"
+              type="button"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+
+          <div className="p-6 overflow-y-auto bg-[#130026]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+              {tables.map((num) => {
+                const tableLabel = `Masa ${num}`;
+                const isSelected = vipSelectedTable === tableLabel;
+
+                const emptySeats = vipAvailabilityByLabel[tableLabel] ?? 6;
+                const canFit = vipSeatsRequired > 0 && vipSeatsRequired <= emptySeats;
+
+                return (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => {
+                      if (!canFit) return;
+                      setVipSelectedTable(tableLabel);
+                      setVipActiveZone(null);
+                    }}
+                    className={cn(
+                      "rounded-xl p-3 min-h-[92px] flex flex-col items-center justify-center text-center transition-all border-2",
+                      !canFit
+                        ? "bg-[#1b1430] border-[#3a285e] text-indigo-300 opacity-60 cursor-not-allowed"
+                        : isSelected
+                          ? "bg-[#00E5FF]/10 border-[#00E5FF] text-white shadow-[0_0_15px_rgba(0,229,255,0.25)]"
+                          : "bg-[#241242] border-[#4C2A85] text-white hover:border-[#FFD700] hover:bg-[#2D1B4E]",
+                    )}
+                  >
+                    <span className={cn("text-base font-black leading-none", isSelected ? "text-[#00E5FF]" : "text-white")}>
+                      Masa {num}
+                    </span>
+                    <span className="mt-2 text-[11px] leading-tight text-indigo-200">
+                      Locuri libere: <span className="font-bold text-white">{emptySeats}</span>
+                    </span>
+                    <span className={cn("mt-1 text-[10px] font-semibold", canFit ? "text-[#00E5FF]" : "text-rose-300")}>
+                      {canFit ? `Potrivită pentru ${vipSeatsRequired} VIP` : `Nu încape (${vipSeatsRequired})`}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="p-4 border-t border-[#4C2A85] bg-[#1A0B2E] text-center">
+            <p className="text-xs text-indigo-300">
+              Toate mesele au capacitate de 6 persoane.
+              {vipAvailLoading ? " (se actualizează...)" : ""}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const VipZoneCircle = ({
+    id,
+    label,
+    onClick,
+  }: {
+    id: string;
+    label: string;
+    onClick: () => void;
+  }) => {
+    const [start, end] = id.split("-").map(Number);
+    let isZoneSelected = false;
+    if (vipSelectedTable) {
+      const tableNum = parseInt(vipSelectedTable.replace("Masa ", ""));
+      if (tableNum >= start && tableNum <= end) isZoneSelected = true;
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "relative size-28 sm:size-32 rounded-full border-2 flex flex-col items-center justify-center cursor-pointer transition-all duration-300",
+          isZoneSelected
+            ? "bg-[#00E5FF] border-[#00E5FF] text-[#130026] shadow-[0_0_30px_rgba(0,229,255,0.6)] scale-105"
+            : "bg-[#1A0B2E] border-[#FFD700] text-[#FFD700] hover:bg-[#FFD700]/10 hover:shadow-[0_0_20px_rgba(255,215,0,0.3)]",
+        )}
+      >
+        <span className="text-xs font-bold uppercase tracking-wider mb-1 opacity-80">Mese</span>
+        <span className="text-xl sm:text-2xl font-black">{label}</span>
+        {isZoneSelected && (
+          <div className="absolute -top-2 -right-2 bg-white text-[#130026] size-6 flex items-center justify-center rounded-full border-2 border-[#130026] shadow-lg">
+            <span className="material-symbols-outlined text-sm font-bold">check</span>
+          </div>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-[#0F0518] text-slate-100">
+      {vipActiveZone ? (
+        <VipTableSelectorModal
+          zoneId={vipActiveZone}
+          onClose={() => setVipActiveZone(null)}
+        />
+      ) : null}
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 py-8">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
@@ -354,7 +622,6 @@ export default function PosClient() {
               email.
             </p>
           </div>
-
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -418,9 +685,68 @@ export default function PosClient() {
               </div>
 
               {anyVip ? (
-                <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                  Ai produse VIP. Masa se alocă din flow-ul VIP (pasul VIP) —
-                  aici doar vinzi și emiți biletele.
+                <div className="mt-4 rounded-2xl border border-[#FFD700]/25 bg-[#FFD700]/5 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-white font-bold text-sm">Alocare masă VIP (obligatoriu)</p>
+                      <p className="text-[#B39DDB] text-xs mt-1">
+                        Pentru biletele VIP trebuie să alegi o masă înainte de a genera biletele.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void refreshVipAvailability(vipDaysLow)}
+                      disabled={vipAvailLoading}
+                      className={cn(
+                        "h-9 px-3 rounded-xl border text-xs font-bold transition-colors",
+                        vipAvailLoading
+                          ? "border-[#432C7A] bg-[#24123E]/60 text-indigo-200 cursor-wait"
+                          : "border-[#432C7A] bg-[#24123E] text-white hover:border-[#00E5FF]/50 hover:text-[#00E5FF]",
+                      )}
+                      title="Reîncarcă disponibilitatea"
+                    >
+                      {vipAvailLoading ? "Se actualizează..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  {vipSeatsRequired > 6 ? (
+                    <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-100">
+                      Comanda are {vipSeatsRequired} locuri VIP. Un singur tabel are max 6 locuri.
+                      Împarte biletele VIP în mai multe comenzi.
+                    </div>
+                  ) : null}
+
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <VipZoneCircle id="1-25" label="1-25" onClick={() => setVipActiveZone("1-25")} />
+                    <VipZoneCircle id="26-50" label="26-50" onClick={() => setVipActiveZone("26-50")} />
+                    <VipZoneCircle id="51-75" label="51-75" onClick={() => setVipActiveZone("51-75")} />
+                    <VipZoneCircle id="76-100" label="76-100" onClick={() => setVipActiveZone("76-100")} />
+                    <VipZoneCircle id="101-125" label="101-125" onClick={() => setVipActiveZone("101-125")} />
+                    <VipZoneCircle id="126-150" label="126-150" onClick={() => setVipActiveZone("126-150")} />
+                    <VipZoneCircle id="151-175" label="151-175" onClick={() => setVipActiveZone("151-175")} />
+                    <VipZoneCircle id="176-200" label="176-200" onClick={() => setVipActiveZone("176-200")} />
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-[#432C7A] bg-[#24123E]/60 p-3 text-sm text-indigo-100">
+                    <p>
+                      Locuri VIP în comandă: <span className="font-bold text-white">{vipSeatsRequired}</span>
+                    </p>
+                    <p className="mt-1">
+                      Masă selectată: <span className="font-bold text-white">{vipSelectedTable || "—"}</span>
+                    </p>
+                    {vipSelectedTable ? (
+                      <p className="mt-1">
+                        Locuri libere (min pe zile): <span className="font-bold text-white">{vipSeatsAvailableForSelected}</span>
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-xs text-indigo-200">
+                      Zile VIP: <span className="font-semibold text-white">{vipDaysUpper.join(", ") || "—"}</span>
+                    </p>
+                  </div>
+
+                  <p className="mt-2 text-xs text-indigo-200">
+                    Masa se rezervă automat la generare (în `/api/admin/pos/create`).
+                  </p>
                 </div>
               ) : null}
             </section>
@@ -707,6 +1033,7 @@ export default function PosClient() {
                     </p>
                   </div>
 
+
                   <div className="grid grid-cols-1 gap-2">
                     <a
                       href={result.links.pdfUrl}
@@ -740,7 +1067,6 @@ export default function PosClient() {
                 </div>
               )}
             </section>
-
           </div>
         </div>
       </div>

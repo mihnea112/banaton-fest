@@ -194,6 +194,15 @@ type PosPayload = {
     fullName?: string;
   };
   items?: PosItemInput[];
+
+  // POS VIP allocation (server-side reservation).
+  // If you sell VIP at the POS, provide the table label (e.g. "Masa 12").
+  // Days are derived from each VIP order_item (canonical_day_set), with VIP_4DAY defaulting to all 4 days.
+  vip?: {
+    tableLabel?: string; // preferred (matches vip_tables.label)
+    tableId?: string; // optional direct id
+  };
+
   // if true, after creating order we call /api/tickets/public?token=... to send email once
   sendEmail?: boolean;
 };
@@ -267,11 +276,227 @@ async function resolveUnitPriceRon(params: {
   return price;
 }
 
+// ---------- VIP reservation (POS server-side) ----------
+type EventDayRow = { id: string; day_code: string };
+
+type VipTableRow = {
+  id: string;
+  label: string | null;
+  table_number: number | null;
+  capacity: number | null;
+  status: string | null;
+};
+
+function parseTableNumberFromLabel(label: string): number | null {
+  const m = String(label).match(/(\d+)/);
+  if (!m) return null;
+  const n = Math.floor(Number(m[1]));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function splitCanonicalDaySet(canonical: string): Array<"FRI" | "SAT" | "SUN" | "MON"> {
+  const raw = String(canonical || "")
+    .trim()
+    .toUpperCase();
+  if (!raw) return [];
+
+  const parts = raw
+    .split(/[^A-Z]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const out: Array<"FRI" | "SAT" | "SUN" | "MON"> = [];
+  for (const p of parts) {
+    const d = normalizeDayCodeUpper(p);
+    if (d) out.push(d);
+  }
+  return Array.from(new Set(out));
+}
+
+async function loadEventDayMap(): Promise<Record<"FRI" | "SAT" | "SUN" | "MON", string>> {
+  const { data, error } = await supabase
+    .from("event_days")
+    .select("id, day_code")
+    .in("day_code", ["FRI", "SAT", "SUN", "MON"]);
+  if (error) throw error;
+
+  const rows = (data || []) as unknown as EventDayRow[];
+  const map = { FRI: "", SAT: "", SUN: "", MON: "" } as Record<
+    "FRI" | "SAT" | "SUN" | "MON",
+    string
+  >;
+
+  for (const r of rows) {
+    const key = normalizeDayCodeUpper(r.day_code);
+    if (key) map[key] = r.id;
+  }
+
+  // ensure all exist
+  for (const k of ["FRI", "SAT", "SUN", "MON"] as const) {
+    if (!map[k]) throw new Error(`Missing event_day for ${k}`);
+  }
+
+  return map;
+}
+
+async function resolveVipTable(params: { tableId?: string | null; tableLabel?: string | null }): Promise<VipTableRow> {
+  const tableId = asString(params.tableId);
+  const tableLabel = asString(params.tableLabel);
+
+  if (!tableId && !tableLabel) {
+    throw new Error("VIP allocation requires vip.tableLabel or vip.tableId");
+  }
+
+  let q = supabase.from("vip_tables").select("id, label, table_number, capacity, status");
+  if (tableId) q = q.eq("id", tableId);
+  else {
+    // try label match first
+    q = q.eq("label", tableLabel as string);
+  }
+
+  let { data, error } = await q.maybeSingle();
+  if (error) throw error;
+
+  // fallback: parse number and match by table_number
+  if (!data && tableLabel) {
+    const n = parseTableNumberFromLabel(tableLabel);
+    if (n) {
+      const r = await supabase
+        .from("vip_tables")
+        .select("id, label, table_number, capacity, status")
+        .eq("table_number", n)
+        .maybeSingle();
+      if (r.error) throw r.error;
+      data = r.data as any;
+    }
+  }
+
+  if (!data) {
+    throw new Error(
+      `VIP table not found for ${tableId ? `id=${tableId}` : `label=${tableLabel}`}`,
+    );
+  }
+
+  return data as VipTableRow;
+}
+
+async function getAlreadyReservedSeats(params: {
+  vipTableId: string;
+  vipReservationDayEventDayId: string;
+}): Promise<number> {
+  // Step 1: get reservation ids for this table
+  const { data: resIds, error: resErr } = await supabase
+    .from("vip_table_reservations")
+    .select("id")
+    .eq("vip_table_id", params.vipTableId);
+
+  if (resErr) throw resErr;
+
+  const ids = (resIds || []).map((r: any) => r.id).filter(Boolean);
+  if (!ids.length) return 0;
+
+  // Step 2: sum seats in reservation_days for these reservations and this day
+  const { data: days, error: dayErr } = await supabase
+    .from("vip_table_reservation_days")
+    .select("seats_reserved")
+    .in("vip_table_reservation_id", ids)
+    .eq("event_day_id", params.vipReservationDayEventDayId);
+
+  if (dayErr) throw dayErr;
+
+  return (days || []).reduce((s: number, r: any) => s + toInt(r.seats_reserved, 0), 0);
+}
+
+async function createVipReservationsForPosOrder(params: {
+  orderId: string;
+  orderItems: Array<{ id: string; category: string; quantity: number; canonical_day_set: string; duration_type: string }>;
+  vipTableId: string;
+  vipTableCapacity: number;
+  eventDayIdByCode: Record<"FRI" | "SAT" | "SUN" | "MON", string>;
+}): Promise<{ created: number; createdDays: number }> {
+  const vipItems = params.orderItems.filter((it) => String(it.category).toLowerCase() === "vip");
+  if (!vipItems.length) return { created: 0, createdDays: 0 };
+
+  // Validate capacity per day first (fail fast)
+  for (const it of vipItems) {
+    const qty = Math.max(1, toInt(it.quantity, 1));
+
+    const daysFromCanonical = splitCanonicalDaySet(it.canonical_day_set);
+    const days: Array<"FRI" | "SAT" | "SUN" | "MON"> = daysFromCanonical.length
+      ? daysFromCanonical
+      : (it.duration_type === "4_day" ? ["FRI", "SAT", "SUN", "MON"] : []);
+
+    // If somehow still empty, default to all (safe)
+    const finalDays = days.length ? days : (["FRI", "SAT", "SUN", "MON"] as const);
+
+    for (const d of finalDays) {
+      const eventDayId = params.eventDayIdByCode[d];
+      const already = await getAlreadyReservedSeats({
+        vipTableId: params.vipTableId,
+        vipReservationDayEventDayId: eventDayId,
+      });
+
+      const next = already + qty;
+      if (next > params.vipTableCapacity) {
+        throw new Error(
+          `VIP table capacity exceeded for ${d}: ${already} reserved, trying to add ${qty}, capacity ${params.vipTableCapacity}`,
+        );
+      }
+    }
+  }
+
+  // Insert reservations + reservation days
+  let created = 0;
+  let createdDays = 0;
+
+  for (const it of vipItems) {
+    const qty = Math.max(1, toInt(it.quantity, 1));
+
+    const daysFromCanonical = splitCanonicalDaySet(it.canonical_day_set);
+    const days: Array<"FRI" | "SAT" | "SUN" | "MON"> = daysFromCanonical.length
+      ? daysFromCanonical
+      : (it.duration_type === "4_day" ? ["FRI", "SAT", "SUN", "MON"] : []);
+
+    const finalDays = days.length ? days : (["FRI", "SAT", "SUN", "MON"] as const);
+
+    const reservationId = crypto.randomUUID();
+
+    const { error: insResErr } = await supabase.from("vip_table_reservations").insert({
+      id: reservationId,
+      order_id: params.orderId,
+      order_item_id: it.id,
+      vip_table_id: params.vipTableId,
+      seats_reserved: qty,
+      created_at: nowIso(),
+    });
+
+    if (insResErr) throw insResErr;
+    created += 1;
+
+    const dayRows = finalDays.map((d) => ({
+      id: crypto.randomUUID(),
+      vip_table_reservation_id: reservationId,
+      event_day_id: params.eventDayIdByCode[d],
+      seats_reserved: qty,
+    }));
+
+    const { error: insDaysErr } = await supabase
+      .from("vip_table_reservation_days")
+      .insert(dayRows);
+
+    if (insDaysErr) throw insDaysErr;
+    createdDays += dayRows.length;
+  }
+
+  return { created, createdDays };
+}
+
 // ---------- Route ----------
 export async function POST(req: Request) {
   const unauthorized = await requireAdminAuth();
   if (unauthorized) return unauthorized;
 
+  let orderIdForRollback: string | null = null;
   try {
     const body = (await req.json().catch(() => ({}))) as PosPayload;
 
@@ -309,6 +534,18 @@ export async function POST(req: Request) {
       );
     }
 
+    // Pre-resolve VIP requirements BEFORE writing anything to DB.
+    // If POS sells VIP items, the cashier MUST pick a table.
+    const vipTableIdInput = asString(body.vip?.tableId);
+    const vipTableLabelInput = asString(body.vip?.tableLabel);
+
+    // We'll compute hasVipItems after we build lines, but we also want a fast check from inputs.
+    // (If ticket_products resolution says VIP later, we still enforce table.)
+    const vipContext: {
+      table: VipTableRow | null;
+      eventDayIdByCode: Record<"FRI" | "SAT" | "SUN" | "MON", string> | null;
+    } = { table: null, eventDayIdByCode: null };
+
     // 1) Normalize + compute lines
     const lines: Array<{
       id: string;
@@ -326,8 +563,15 @@ export async function POST(req: Request) {
     }> = [];
 
     const orderId = crypto.randomUUID();
+    orderIdForRollback = orderId;
     const publicToken = crypto.randomUUID();
     const createdAt = nowIso();
+
+    // Best-effort rollback tracking (avoids orphan paid orders on partial failure)
+    let wroteOrder = false;
+    let wroteItems = false;
+    let wroteVipReservations = false;
+    let wroteTickets = false;
 
     for (const input of itemsIn) {
       const qty = Math.max(1, toInt(input.qty ?? input.quantity ?? 1, 1));
@@ -360,6 +604,58 @@ export async function POST(req: Request) {
         canonical_day_set: canonicalDaySet, // may be ""
         created_at: createdAt,
       });
+    }
+
+    // --- Enforce VIP table selection and pre-load event day map before writing ---
+    const hasVipItems = lines.some(
+      (l) => String(l.category).toLowerCase() === "vip",
+    );
+
+    if (hasVipItems) {
+      // POS must provide a VIP table for VIP items.
+      // If missing, fail with 400 (do NOT create any DB rows).
+      if (!vipTableIdInput && !vipTableLabelInput) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: {
+              message:
+                "VIP allocation requires selecting a table. Provide vip.tableLabel (ex: 'Masa 12') or vip.tableId.",
+            },
+          },
+          { status: 400 },
+        );
+      }
+
+      try {
+        vipContext.table = await resolveVipTable({
+          tableId: vipTableIdInput,
+          tableLabel: vipTableLabelInput,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Invalid VIP table";
+        return NextResponse.json(
+          { ok: false, error: { message: msg } },
+          { status: 400 },
+        );
+      }
+
+      const capacity = Math.max(0, toInt(vipContext.table.capacity ?? 0, 0));
+      if (capacity <= 0) {
+        return NextResponse.json(
+          { ok: false, error: { message: "VIP table capacity is invalid" } },
+          { status: 400 },
+        );
+      }
+
+      if (String(vipContext.table.status || "").toLowerCase() === "inactive") {
+        return NextResponse.json(
+          { ok: false, error: { message: "VIP table is inactive" } },
+          { status: 400 },
+        );
+      }
+
+      vipContext.eventDayIdByCode = await loadEventDayMap();
     }
 
     const subtotalRon = lines.reduce(
@@ -404,12 +700,47 @@ export async function POST(req: Request) {
     });
 
     if (insOrderErr) throw insOrderErr;
+    wroteOrder = true;
 
     // 3) Insert order_items
     const { error: insItemsErr } = await supabase
       .from("order_items")
       .insert(lines);
     if (insItemsErr) throw insItemsErr;
+    wroteItems = true;
+
+    // 3.5) POS VIP allocation -> create vip_table_reservations (+ vip_table_reservation_days)
+    // This is a separate implementation from /order/[publicToken]/vip-allocation, so POS can work standalone.
+    let vipReservationResult: { created: number; createdDays: number } = {
+      created: 0,
+      createdDays: 0,
+    };
+
+    if (hasVipItems) {
+      // table + event day map were pre-resolved above
+      const vipTable = vipContext.table as VipTableRow;
+      const capacity = Math.max(0, toInt(vipTable.capacity ?? 0, 0));
+      const eventDayIdByCode = vipContext.eventDayIdByCode as Record<
+        "FRI" | "SAT" | "SUN" | "MON",
+        string
+      >;
+
+      vipReservationResult = await createVipReservationsForPosOrder({
+        orderId,
+        orderItems: lines.map((l) => ({
+          id: l.id,
+          category: l.category,
+          quantity: l.quantity,
+          canonical_day_set: l.canonical_day_set,
+          duration_type: l.duration_type,
+        })),
+        vipTableId: vipTable.id,
+        vipTableCapacity: capacity,
+        eventDayIdByCode,
+      });
+
+      wroteVipReservations = vipReservationResult.created > 0;
+    }
 
     // 4) Issue tickets now (so PDF works instantly)
     const issued = await issueTicketsForOrder({
@@ -417,6 +748,7 @@ export async function POST(req: Request) {
       publicToken: String(publicToken),
       attendeeName: fullName,
     });
+    wroteTickets = issued.issued || issued.count > 0;
 
     // 5) Optional: send tickets email via your existing route (idempotent via tickets_email_sent_at)
     let emailed = false;
@@ -451,6 +783,7 @@ export async function POST(req: Request) {
         customer_phone: phone ?? null,
       },
       issued_tickets: issued,
+      vip_reservations: vipReservationResult,
       links: {
         successUrl: `${origin}/success?order=${encodeURIComponent(String(publicToken))}`,
         pdfUrl: `${origin}/api/tickets/pdf?token=${encodeURIComponent(String(publicToken))}`,
@@ -459,6 +792,32 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error("[POST /api/admin/pos/create] error", e);
+    // Best-effort rollback to avoid orphan paid orders on partial failure.
+    // Ignore rollback errors.
+    try {
+      if (orderIdForRollback) {
+        await supabase.from("issued_tickets").delete().eq("order_id", String(orderIdForRollback));
+
+        const { data: vr } = await supabase
+          .from("vip_table_reservations")
+          .select("id")
+          .eq("order_id", String(orderIdForRollback));
+
+        const vrIds = (vr || []).map((r: any) => r.id).filter(Boolean);
+        if (vrIds.length) {
+          await supabase
+            .from("vip_table_reservation_days")
+            .delete()
+            .in("vip_table_reservation_id", vrIds);
+        }
+
+        await supabase.from("vip_table_reservations").delete().eq("order_id", String(orderIdForRollback));
+        await supabase.from("order_items").delete().eq("order_id", String(orderIdForRollback));
+        await supabase.from("orders").delete().eq("id", String(orderIdForRollback));
+      }
+    } catch {
+      // ignore
+    }
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
       { ok: false, error: { message: msg } },
