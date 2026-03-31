@@ -39,7 +39,7 @@ export default function Home() {
 
   const M = {
     ro: {
-      hero_badge: "29.05–01.06.2026 • Timișoara • Bulevardul Republicii",
+      hero_badge: "29.05–01.06.2026 • Timișoara • Locația ELBA, str. Gării nr. 1",
       hero_title_prefix: "Banaton",
       hero_title_highlight: "Fest",
       hero_subtitle: "Festival de 4 zile în centrul Timișoarei: awards, concert exclusiv CECA, folclor simfonic și chitară/rock balcanic într-o singură experiență.",
@@ -70,10 +70,10 @@ export default function Home() {
       prices_vip_4days: "VIP 4 zile",
       prices_vip_note: "Pentru VIP se selectează masa în pasul VIP (înainte de checkout).",
       attention_title: "Atenție!!!",
-      attention_location: "Locația: Centrul Timișoara",
+      attention_location: "Locația: ELBA, str. Gării nr. 1, Timișoara",
     },
     en: {
-      hero_badge: "May 29–June 1, 2026 • Timișoara • Bulevardul Republicii",
+      hero_badge: "May 29–June 1, 2026 • Timișoara • ELBA Venue, 1 Gării Street",
       hero_title_prefix: "Banaton",
       hero_title_highlight: "Fest",
       hero_subtitle: "4-day festival in central Timișoara: awards, exclusive CECA show, symphonic folk and Balkan rock — all in one experience.",
@@ -104,7 +104,7 @@ export default function Home() {
       prices_vip_4days: "VIP 4 Days",
       prices_vip_note: "VIP tickets require table selection in the VIP step before checkout.",
       attention_title: "Attention!!!",
-      attention_location: "Location: Central Timișoara",
+      attention_location: "Location: ELBA Venue, 1 Gării Street, Timișoara",
     },
   } as const;
 
@@ -249,10 +249,10 @@ export default function Home() {
     url: SITE_URL,
     location: {
       "@type": "Place",
-      name: "Bulevardul Republicii",
+      name: "ELBA",
       address: {
         "@type": "PostalAddress",
-        streetAddress: "Bulevardul Republicii",
+        streetAddress: "Str. Gării nr. 1",
         addressLocality: "Timișoara",
         addressCountry: "RO",
       },
@@ -276,7 +276,7 @@ export default function Home() {
               name: "Where does Banaton Fest 2026 take place?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "In Timișoara, on Bulevardul Republicii (central area).",
+                text: "In Timișoara, at ELBA (Str. Gării nr. 1).",
               },
             },
             {
@@ -306,7 +306,7 @@ export default function Home() {
               name: "Unde are loc Banaton Fest 2026?",
               acceptedAnswer: {
                 "@type": "Answer",
-                text: "Evenimentul are loc în Timișoara, pe Bulevardul Republicii (zona centrală).",
+                text: "Evenimentul are loc în Timișoara, la ELBA (str. Gării nr. 1).",
               },
             },
             {
