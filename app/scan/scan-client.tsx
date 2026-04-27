@@ -94,14 +94,17 @@ export default function ScanClient() {
               if (!res.ok || !json.ok)
                 throw new Error((json as any)?.error?.message || "Invalid");
 
+              const isEntry = json.ticket.status === "entered";
+              const statusLabel = isEntry ? "✅ INTRARE" : "🚪 IESIRE";
+              const subtitle = isEntry ? "Bun venit!" : "La revedere!";
               setResultScreen({
                 ok: true,
-                title: "Bilet valid",
-                subtitle: `Ticket #${json.ticket.ticket_number ?? "?"}`,
+                title: statusLabel,
+                subtitle: `${subtitle} - Ticket #${json.ticket.ticket_number ?? "?"}`,
                 ticket: json.ticket,
                 qr: text,
               });
-              setStatus("✅ OK");
+              setStatus(statusLabel);
               setView("result");
             } catch (e) {
               const msg = e instanceof Error ? e.message : "Invalid";

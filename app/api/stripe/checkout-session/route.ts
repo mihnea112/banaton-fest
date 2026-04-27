@@ -6,9 +6,15 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+const stripeDefault = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-01-28.clover",
 });
+
+const stripeParter = process.env.STRIPE_SECRET_KEY_PARTER
+  ? new Stripe(process.env.STRIPE_SECRET_KEY_PARTER, {
+      apiVersion: "2026-01-28.clover",
+    })
+  : stripeDefault;
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -181,6 +187,22 @@ function buildLineItemsFromOrderItems(
   return lineItems;
 }
 
+function determineStripeInstance(items: PublicOrderItem[]): { instance: Stripe; isParter: boolean } {
+  // Check if order contains PARTER items
+  const hasParter = items.some((item) => {
+    const categoryRaw = String(
+      item.category ?? item.ticket_category ?? item.access_type ?? "general",
+    ).toLowerCase();
+    return categoryRaw === "parter";
+  });
+
+  if (hasParter && stripeParter !== stripeDefault) {
+    return { instance: stripeParter, isParter: true };
+  }
+
+  return { instance: stripeDefault, isParter: false };
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.STRIPE_SECRET_KEY) {
@@ -281,6 +303,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Determine which Stripe instance to use
+    const { instance: stripeInstance, isParter } = determineStripeInstance(items);
+
     let lineItems = buildLineItemsFromOrderItems(items);
 
     if (!lineItems.length) {
@@ -329,7 +354,11 @@ export async function POST(req: NextRequest) {
       metadata.customerPhone = customerPhone;
     }
 
-    const session = await stripe.checkout.sessions.create({
+    if (isParter) {
+      metadata.ticket_type = "parter";
+    }
+
+    const session = await stripeInstance.checkout.sessions.create({
       mode: "payment",
       client_reference_id: orderToken,
       success_url: successUrl,

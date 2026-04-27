@@ -432,10 +432,9 @@ export async function GET(req: NextRequest) {
       const itemDayCodes = itemId ? (daysByItemId.get(itemId) ?? []) : [];
       const canonical_day_set = canonicalDaySetFromCodes(itemDayCodes);
 
+      const categoryRaw = String(item.category ?? "general").toLowerCase();
       const category =
-        String(item.category ?? "general").toLowerCase() === "vip"
-          ? "vip"
-          : "general";
+        categoryRaw === "vip" ? "vip" : categoryRaw === "parter" ? "parter" : "general";
 
       const name =
         pickFirstString(item, [

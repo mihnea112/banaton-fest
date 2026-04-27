@@ -1,5 +1,5 @@
 export type DayCode = "FRI" | "SAT" | "SUN" | "MON";
-export type Category = "general" | "vip";
+export type Category = "general" | "vip" | "parter";
 
 export type ProductCode =
   | "GENERAL_1_DAY"
@@ -7,7 +7,9 @@ export type ProductCode =
   | "GENERAL_3_DAY"
   | "GENERAL_4_DAY"
   | "VIP_1_DAY"
-  | "VIP_4_DAY";
+  | "VIP_4_DAY"
+  | "PARTER_1_DAY"
+  | "PARTER_4_DAY";
 
 export const ALL_DAY_CODES: DayCode[] = ["FRI", "SAT", "SUN", "MON"];
 export const NON_SAT_DAY_CODES: DayCode[] = ["FRI", "SUN", "MON"];
@@ -70,6 +72,18 @@ export function validateSelection(productCode: ProductCode, selectedDayCodes?: s
       return { valid: true, days: ALL_DAY_CODES };
     }
 
+    case "PARTER_1_DAY": {
+      if (days.length !== 1) return { valid: false, message: "PARTER_1_DAY necesită exact 1 zi." };
+      return { valid: true, days };
+    }
+
+    case "PARTER_4_DAY": {
+      if (days.length > 0 && !arraysEqualUnordered(days, ALL_DAY_CODES)) {
+        return { valid: false, message: "PARTER_4_DAY este fix: toate cele 4 zile." };
+      }
+      return { valid: true, days: ALL_DAY_CODES };
+    }
+
     default:
       return { valid: false, message: "Product code invalid." };
   }
@@ -101,13 +115,23 @@ export function computeUnitPrice(productCode: ProductCode, selectedDayCodes?: st
     case "VIP_4_DAY":
       return 750;
 
+    case "PARTER_1_DAY": {
+      if (days.length !== 1) throw new Error("PARTER_1_DAY requires exactly 1 day.");
+      return days[0] === "SAT" ? 60 : 40;
+    }
+
+    case "PARTER_4_DAY":
+      return 100;
+
     default:
       throw new Error("Unknown product code");
   }
 }
 
 export function categoryFromProductCode(productCode: ProductCode): Category {
-  return productCode.startsWith("VIP") ? "vip" : "general";
+  if (productCode.startsWith("VIP")) return "vip";
+  if (productCode.startsWith("PARTER")) return "parter";
+  return "general";
 }
 
 export function labelFromProductCode(productCode: ProductCode): string {
@@ -118,6 +142,8 @@ export function labelFromProductCode(productCode: ProductCode): string {
     case "GENERAL_4_DAY": return "Acces General - 4 zile";
     case "VIP_1_DAY": return "VIP - 1 zi";
     case "VIP_4_DAY": return "VIP - 4 zile";
+    case "PARTER_1_DAY": return "Parter - 1 zi";
+    case "PARTER_4_DAY": return "Parter - 4 zile";
     default: return productCode;
   }
 }
@@ -126,6 +152,7 @@ export function durationLabelFromProductCode(productCode: ProductCode): string {
   switch (productCode) {
     case "GENERAL_1_DAY":
     case "VIP_1_DAY":
+    case "PARTER_1_DAY":
       return "1 zi";
     case "GENERAL_2_DAY":
       return "2 zile";
@@ -133,6 +160,7 @@ export function durationLabelFromProductCode(productCode: ProductCode): string {
       return "3 zile";
     case "GENERAL_4_DAY":
     case "VIP_4_DAY":
+    case "PARTER_4_DAY":
       return "4 zile";
     default:
       return "";

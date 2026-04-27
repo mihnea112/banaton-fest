@@ -99,6 +99,22 @@ const PRODUCT_I18N: Record<string, { roName?: string; enName?: string; roDesc?: 
     roDesc: "Include loc la masă (selectezi masa în pagina de mese VIP)",
     enDesc: "Includes a table seat (choose your table on the VIP tables page)",
   },
+  "parter-4day": {
+    roName: "Parter 4 Zile",
+    enName: "Parter 4 Days",
+    roDuration: "4 Zile",
+    enDuration: "4 Days",
+    roDesc: "Acces Parter pentru toate cele 4 zile ale festivalului (29.05–01.06.2026)",
+    enDesc: "Parter access for all 4 festival days (29.05–01.06.2026)",
+  },
+  "parter-1day": {
+    roName: "Parter - 1 Zi",
+    enName: "Parter - 1 Day",
+    roDuration: "1 Zi",
+    enDuration: "1 Day",
+    roDesc: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 40 RON / Sâmbătă (30.05): 60 RON",
+    enDesc: "Fri (29.05), Sun (31.05) & Mon (01.06): 40 RON / Sat (30.05): 60 RON",
+  },
 };
 
 const VARIANT_I18N: Record<string, { ro: string; en: string }> = {
@@ -116,6 +132,11 @@ const VARIANT_I18N: Record<string, { ro: string; en: string }> = {
   "vip-1day-sat": { ro: "Sâmbătă (30.05) (CECA)", en: "Saturday (30.05) (CECA)" },
   "vip-1day-sun": { ro: "Duminică (31.05)", en: "Sunday (31.05)" },
   "vip-1day-mon": { ro: "Luni (01.06)", en: "Monday (01.06)" },
+  // Parter 1-day
+  "parter-1day-fri": { ro: "Vineri (29.05)", en: "Friday (29.05)" },
+  "parter-1day-sat": { ro: "Sâmbătă (30.05)", en: "Saturday (30.05)" },
+  "parter-1day-sun": { ro: "Duminică (31.05)", en: "Sunday (31.05)" },
+  "parter-1day-mon": { ro: "Luni (01.06)", en: "Monday (01.06)" },
 };
 
 function localizeProduct(locale: Locale, p: TicketProduct) {
@@ -134,7 +155,7 @@ function localizeVariantLabel(locale: Locale, variantId: string, fallback: strin
 }
 
 
-type TicketCategory = "general" | "vip";
+type TicketCategory = "general" | "vip" | "parter";
 
 type DayCodeLower = "fri" | "sat" | "sun" | "mon";
 
@@ -338,7 +359,9 @@ type ApiProductCode =
   | "GENERAL_3_DAY"
   | "GENERAL_4_DAY"
   | "VIP_1_DAY"
-  | "VIP_4_DAY";
+  | "VIP_4_DAY"
+  | "PARTER_1_DAY"
+  | "PARTER_4_DAY";
 
 type ApiDraftCreateResponse = {
   ok?: boolean;
@@ -421,6 +444,31 @@ const PRODUCTS: TicketProduct[] = [
       { id: "vip-1day-sat", label: "Sâmbătă (30.05) (CECA)", price: 350 },
       { id: "vip-1day-sun", label: "Duminică (31.05)", price: 200 },
       { id: "vip-1day-mon", label: "Luni (01.06)", price: 200 },
+    ],
+  },
+
+  // Parter
+  {
+    id: "parter-4day",
+    category: "parter",
+    name: "Parter 4 Zile",
+    durationLabel: "4 Zile",
+    price: 100,
+    description:
+      "Acces Parter pentru toate cele 4 zile ale festivalului (29.05–01.06.2026)",
+  },
+  {
+    id: "parter-1day",
+    category: "parter",
+    name: "Parter - 1 Zi",
+    durationLabel: "1 Zi",
+    price: 40,
+    description: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 40 RON / Sâmbătă (30.05): 60 RON",
+    variants: [
+      { id: "parter-1day-fri", label: "Vineri (29.05)", price: 40 },
+      { id: "parter-1day-sat", label: "Sâmbătă (30.05)", price: 60 },
+      { id: "parter-1day-sun", label: "Duminică (31.05)", price: 40 },
+      { id: "parter-1day-mon", label: "Luni (01.06)", price: 40 },
     ],
   },
 ];
@@ -594,6 +642,8 @@ export default function Tickets() {
         if (id === "gen-4day") return "GENERAL_4_DAY";
         if (id.startsWith("vip-1day-")) return "VIP_1_DAY";
         if (id === "vip-4day") return "VIP_4_DAY";
+        if (id.startsWith("parter-1day-")) return "PARTER_1_DAY";
+        if (id === "parter-4day") return "PARTER_4_DAY";
         return null;
       })();
 
@@ -643,6 +693,12 @@ export default function Tickets() {
       "vip-1day-sun": ["sun"],
       "vip-1day-mon": ["mon"],
       "vip-4day": ["fri", "sat", "sun", "mon"],
+
+      "parter-1day-fri": ["fri"],
+      "parter-1day-sat": ["sat"],
+      "parter-1day-sun": ["sun"],
+      "parter-1day-mon": ["mon"],
+      "parter-4day": ["fri", "sat", "sun", "mon"],
     };
 
     return map[cartId] ?? [];
@@ -1071,6 +1127,28 @@ export default function Tickets() {
               </div>
             </section>
 
+            {/* Parter Section */}
+            <section>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="size-10 rounded-xl bg-brand-surface border border-accent-cyan/30 flex items-center justify-center shadow-lg shadow-accent-cyan/10">
+                  <span className="material-symbols-outlined text-accent-cyan">
+                    group
+                  </span>
+                </div>
+                <h2 className="text-2xl font-bold tracking-tight text-white">
+                  {t(locale, "Acces Parter", "Parter Access")}
+                </h2>
+              </div>
+              <p className="text-sm text-brand-text/70">
+                {t(locale, "Acces Parter fără alocație de masă.", "Parter access without table allocation.")}
+              </p>
+              <div className="flex flex-col gap-4">
+                {PRODUCTS.filter((p) => p.category === "parter").map(
+                  renderProductRow,
+                )}
+              </div>
+            </section>
+
             <div className="p-4 rounded-lg bg-accent-gold/10 border border-accent-gold/20 flex items-start gap-3">
               <span className="material-symbols-outlined text-accent-gold mt-0.5">
                 info
@@ -1139,7 +1217,9 @@ export default function Tickets() {
                                 <p className="text-xs text-brand-text uppercase font-semibold">
                                   {product.category === "vip"
                                     ? "VIP"
-                                    : "Fan Pit"}
+                                    : product.category === "parter"
+                                      ? "Parter"
+                                      : "Fan Pit"}
                                 </p>
                               </div>
                               <p className="font-bold text-white text-sm">

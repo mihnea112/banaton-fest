@@ -10,7 +10,9 @@ type ProductCode =
   | "GENERAL_3_DAY"
   | "GENERAL_4_DAY"
   | "VIP_1_DAY"
-  | "VIP_4_DAY";
+  | "VIP_4_DAY"
+  | "PARTER_1_DAY"
+  | "PARTER_4_DAY";
 
 type IncomingItem = {
   productCode: ProductCode;
@@ -24,7 +26,7 @@ type IncomingBody = {
 
 type NormalizedLine = {
   productCode: ProductCode;
-  category: "general" | "vip";
+  category: "general" | "vip" | "parter";
   name: string;
   durationLabel: string;
   qty: number;
@@ -107,6 +109,7 @@ function categoryMatches(line: NormalizedLine, dbValue: unknown): boolean {
   const v = normalizeLoose(dbValue);
   if (!v) return false;
   if (line.category === "vip") return ["vip"].includes(v);
+  if (line.category === "parter") return ["parter"].includes(v);
   return ["general", "ga", "general_access"].includes(v);
 }
 
@@ -252,7 +255,8 @@ function validateSelectedDays(
     }
 
     case "GENERAL_4_DAY":
-    case "VIP_4_DAY": {
+    case "VIP_4_DAY":
+    case "PARTER_4_DAY": {
       const required: DayCode[] = ["FRI", "SAT", "SUN", "MON"];
       if (selected.length !== 4) {
         return {
@@ -272,6 +276,12 @@ function validateSelectedDays(
       return { valid: true, days: selected };
     }
 
+    case "PARTER_1_DAY":
+      if (selected.length !== 1) {
+        return { valid: false, message: `${productCode} necesită exact 1 zi.` };
+      }
+      return { valid: true, days: selected };
+
     default:
       return { valid: false, message: "Produs necunoscut." };
   }
@@ -283,7 +293,8 @@ function computeLine(
   days: DayCode[],
 ): NormalizedLine {
   const isVip = productCode.startsWith("VIP_");
-  const category: "general" | "vip" = isVip ? "vip" : "general";
+  const isParter = productCode.startsWith("PARTER_");
+  const category: "general" | "vip" | "parter" = isParter ? "parter" : isVip ? "vip" : "general";
 
   let unitPrice = 0;
   let name = "";
@@ -323,6 +334,18 @@ function computeLine(
       name = "Acces VIP - 4 zile";
       durationLabel = "4 zile";
       unitPrice = 750;
+      break;
+    case "PARTER_1_DAY": {
+      name = "Parter - 1 zi";
+      durationLabel = "1 zi";
+      const d = days[0];
+      unitPrice = d === "SAT" ? 60 : 40;
+      break;
+    }
+    case "PARTER_4_DAY":
+      name = "Parter - 4 zile";
+      durationLabel = "4 zile";
+      unitPrice = 100;
       break;
   }
 

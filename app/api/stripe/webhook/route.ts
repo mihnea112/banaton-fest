@@ -9,12 +9,14 @@ export const dynamic = "force-dynamic";
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET_ENV = process.env.STRIPE_WEBHOOK_SECRET;
+const STRIPE_WEBHOOK_SECRET_PARTER_ENV = process.env.STRIPE_WEBHOOK_SECRET_PARTER;
 
 if (!STRIPE_SECRET_KEY) throw new Error("Missing STRIPE_SECRET_KEY");
 if (!STRIPE_WEBHOOK_SECRET_ENV)
   throw new Error("Missing STRIPE_WEBHOOK_SECRET");
 
 const STRIPE_WEBHOOK_SECRET: string = STRIPE_WEBHOOK_SECRET_ENV;
+const STRIPE_WEBHOOK_SECRET_PARTER: string | null = STRIPE_WEBHOOK_SECRET_PARTER_ENV || null;
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: "2026-01-28.clover",
@@ -513,11 +515,40 @@ export async function POST(req: Request) {
 
     const rawBody = await req.text();
 
-    const event = stripe.webhooks.constructEvent(
-      rawBody,
-      signature,
-      STRIPE_WEBHOOK_SECRET,
-    );
+    let event: Stripe.Event | null = null;
+
+    // Try main Stripe webhook secret first
+    try {
+      event = stripe.webhooks.constructEvent(
+        rawBody,
+        signature,
+        STRIPE_WEBHOOK_SECRET,
+      );
+    } catch {
+      // If main secret fails, try PARTER secret if available
+      if (STRIPE_WEBHOOK_SECRET_PARTER) {
+        try {
+          event = stripe.webhooks.constructEvent(
+            rawBody,
+            signature,
+            STRIPE_WEBHOOK_SECRET_PARTER,
+          );
+        } catch (err) {
+          throw new Error(
+            "Webhook signature verification failed for both accounts: " + (err instanceof Error ? err.message : String(err))
+          );
+        }
+      } else {
+        throw new Error("Webhook signature verification failed");
+      }
+    }
+
+    if (!event) {
+      return NextResponse.json(
+        { error: "Failed to construct event" },
+        { status: 400 },
+      );
+    }
 
     await dispatchStripeEvent(event);
 

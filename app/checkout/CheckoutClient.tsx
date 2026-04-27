@@ -11,7 +11,7 @@ interface DraftOrderItem {
   qty?: number;
   quantity?: number; // legacy fallback
 
-  category: "general" | "vip";
+  category: "general" | "vip" | "parter";
 
   name?: string;
   label?: string; // legacy fallback
@@ -69,7 +69,9 @@ const VIP_ALLOCATIONS_STORAGE_KEY = "banatonFestVipAllocations";
 
 function displayCategoryLabel(category: DraftOrderItem["category"]) {
   // IMPORTANT: "general" is named "Fan Pit" across the site.
-  return category === "vip" ? "VIP" : "Fan Pit";
+  if (category === "vip") return "VIP";
+  if (category === "parter") return "Parter";
+  return "Fan Pit";
 }
 
 function normalizeTicketTitle(title: string) {
