@@ -186,12 +186,12 @@ export default function Home() {
         {
           name: "Orchestra RTS",
           time: "17:00",
-          image: "/images/placeholder-artist-1.jpg",
+          image: "/images/orchestra-rts.jpeg",
         },
         {
           name: "Diana Bucsa",
           time: "17:00",
-          image: "/images/placeholder-artist-2.jpg",
+          image: "/images/Diana1.jpeg",
         },
         {
           name: "Trubači iz Dragačevo",
@@ -201,17 +201,17 @@ export default function Home() {
         {
           name: "Dejan Dulović",
           time: "18:00",
-          image: "/images/placeholder-artist-4.jpg",
+          image: "/images/Dejan-Dulovic.webp",
         },
         {
           name: "Leo Martin",
           time: "18:25",
-          image: "/images/placeholder-artist-5.jpg",
+          image: "/images/leo-martin.webp",
         },
         {
           name: "Tijana Dapčević",
           time: "19:20",
-          image: "/images/placeholder-artist-6.jpg",
+          image: "/images/Tijana.jpg",
         },
         {
           name: "Ranko Šemić",
@@ -226,12 +226,12 @@ export default function Home() {
         {
           name: "Rada Manojlović",
           time: "21:00",
-          image: "/images/placeholder-artist-9.jpg",
+          image: "/images/Rada-Manojlovic-2.jpg",
         },
         {
           name: "Ljuba Aličić",
           time: "22:00",
-          image: "/images/placeholder-artist-10.jpg",
+          image: "/images/ljuba-alicic.webp",
         },
       ],
     },
@@ -270,7 +270,7 @@ export default function Home() {
         {
           name: "Svetlana Ceca Ražnatović",
           time: "21:00",
-          image: "/images/placeholder-ceca.jpg",
+          image: "/images/ceca.jpg",
         },
       ],
     },
@@ -294,12 +294,12 @@ export default function Home() {
         {
           name: "Zvonka Bogdan",
           time: "17:00",
-          image: "/images/placeholder-artist-14.jpg",
+          image: "/images/zvonko-bogdan.jpg",
         },
         {
           name: "National Orchestra of Tarabans (RTV Novi Sad)",
           time: "17:30",
-          image: "/images/placeholder-artist-15.jpg",
+          image: "/images/orchestra-rts.jpeg",
         },
         {
           name: "AKUD Mladost",
@@ -309,12 +309,12 @@ export default function Home() {
         {
           name: "Venia Karagiannidou",
           time: "21:00",
-          image: "/images/placeholder-artist-17.jpg",
+          image: "/images/Venia1.jpeg",
         },
         {
           name: "Taraf Marian Alexandru",
           time: "22:00",
-          image: "/images/placeholder-artist-18.jpg",
+          image: "/images/marian_alexandru.png",
         },
       ],
     },
@@ -346,17 +346,17 @@ export default function Home() {
         {
           name: "Šah-Mat",
           time: "17:00",
-          image: "/images/placeholder-artist-19.jpg",
+          image: "/images/SahMat1.jpeg",
         },
         {
           name: "ZAR",
           time: "17:45",
-          image: "/images/placeholder-artist-20.jpg",
+          image: "/images/ZAR.jpg",
         },
         {
           name: "Ivan Kukic & YU For You",
           time: "18:30",
-          image: "/images/placeholder-artist-21.jpg",
+          image: "/images/Ivan.jpg",
         },
         {
           name: "Dado Topić",
@@ -366,12 +366,12 @@ export default function Home() {
         {
           name: "Atomsko Sklonište",
           time: "20:00",
-          image: "/images/placeholder-artist-23.jpg",
+          image: "/images/ATOMSKO.jpg",
         },
         {
           name: "Neverne Bebe",
           time: "20:45",
-          image: "/images/placeholder-artist-24.jpg",
+          image: "/images/BEBE.jpg",
         },
         {
           name: "Električni Orgazam",
@@ -742,21 +742,30 @@ export default function Home() {
                       }
                     >
                       {/* Artist Image */}
-                      <div className="relative w-full h-48 rounded-xl overflow-hidden bg-primary/20 flex items-center justify-center mb-4 border border-white/10">
+                      <div className="relative w-full h-56 rounded-xl overflow-hidden bg-gradient-to-br from-[#2a0e45] to-[#0d0612] flex items-center justify-center mb-4 border border-white/5 group/image">
                         <Image
                           src={performer.image}
                           alt={performer.name}
                           fill
                           sizes="(max-width: 640px) 100%, 33vw"
-                          className="object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                          className="object-contain object-center group-hover:scale-105 transition-transform duration-300"
+                          priority={false}
                           onError={(e) => {
-                            const target = e.target as any;
-                            target.style.display = "none";
+                            const parent = (e.target as HTMLImageElement).parentElement;
+                            if (parent) {
+                              (e.target as HTMLImageElement).style.display = "none";
+                              const fallback = parent.querySelector("[data-fallback]");
+                              if (fallback) fallback.classList.remove("hidden");
+                            }
                           }}
                         />
-                        <span className="material-symbols-outlined text-5xl text-gray-600 absolute">
-                          music_note
-                        </span>
+                        <div data-fallback className="hidden absolute inset-0 flex items-center justify-center">
+                          <img
+                            src="/images/logo.png"
+                            alt="Banaton Fest"
+                            className="w-24 h-24 opacity-50"
+                          />
+                        </div>
                       </div>
 
                       {/* Artist Info */}
