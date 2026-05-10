@@ -205,6 +205,9 @@ type PosPayload = {
 
   // if true, after creating order we call /api/tickets/public?token=... to send email once
   sendEmail?: boolean;
+
+  // if true, create order with total cost 0 lei (requires password verification)
+  isFreeOrder?: boolean;
 };
 
 type TicketProductRow = {
@@ -500,6 +503,37 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as PosPayload;
 
+    // Validate free order password if requested
+    if (body.isFreeOrder) {
+      const adminPassword = process.env.ADMIN_PASSWORD;
+      const submittedPassword = asString(
+        (body as any).freeOrderPassword || (body as any).password,
+      );
+
+      if (!adminPassword) {
+        console.error("[pos] ADMIN_PASSWORD not configured");
+        return NextResponse.json(
+          {
+            ok: false,
+            error: {
+              message: "Server configuration error: ADMIN_PASSWORD not set",
+            },
+          },
+          { status: 500 },
+        );
+      }
+
+      if (!submittedPassword || submittedPassword !== adminPassword) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: { message: "Parolă incorectă pentru comandă gratuită." },
+          },
+          { status: 403 },
+        );
+      }
+    }
+
     const itemsIn = Array.isArray(body.items) ? body.items : [];
     if (!itemsIn.length) {
       return NextResponse.json(
@@ -581,12 +615,17 @@ export async function POST(req: Request) {
       });
 
       const tp = await resolveTicketProduct(input);
-      const unitPrice = await resolveUnitPriceRon({
-        ticketProductId: tp.id,
-        canonicalDaySet,
-        overrideUnitPriceRon:
-          typeof input.unitPriceRon === "number" ? input.unitPriceRon : null,
-      });
+
+      // For free orders, use 0 price. Otherwise, resolve the actual price.
+      let unitPrice = 0;
+      if (!body.isFreeOrder) {
+        unitPrice = await resolveUnitPriceRon({
+          ticketProductId: tp.id,
+          canonicalDaySet,
+          overrideUnitPriceRon:
+            typeof input.unitPriceRon === "number" ? input.unitPriceRon : null,
+        });
+      }
 
       const lineTotal = unitPrice * qty;
 

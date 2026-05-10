@@ -10,7 +10,9 @@ type ProductKey =
   | "GEN_3DAY"
   | "GEN_4DAY"
   | "VIP_1DAY"
-  | "VIP_4DAY";
+  | "VIP_4DAY"
+  | "PARTER_1DAY"
+  | "PARTER_4DAY";
 
 type PosLine = {
   id: string;
@@ -123,6 +125,18 @@ const PRODUCTS: Array<{
     subtitle: "VIP complet 4 zile (masa se alocă separat din flow-ul VIP)",
     requiresDays: "none",
   },
+  {
+    code: "PARTER_1DAY",
+    title: "Parter — 1 zi",
+    subtitle: "Alegi o zi (inclusiv Sâmbătă pentru Concert CECA)",
+    requiresDays: "pick1",
+  },
+  {
+    code: "PARTER_4DAY",
+    title: "Parter — 4 zile",
+    subtitle: "Acces complet 4 zile",
+    requiresDays: "none",
+  },
 ];
 
 function uid() {
@@ -220,6 +234,11 @@ export default function PosClient() {
     CreateResponse,
     { ok: true }
   > | null>(null);
+
+  // --- Free order password modal ---
+  const [showFreeModal, setShowFreeModal] = useState(false);
+  const [freePassword, setFreePassword] = useState("");
+  const [freePasswordError, setFreePasswordError] = useState<string | null>(null);
 
   // --- VIP allocation (same flow as /vip) ---
   const [vipActiveZone, setVipActiveZone] = useState<string | null>(null);
@@ -425,7 +444,7 @@ export default function PosClient() {
     setLines((prev) => prev.filter((l) => l.id !== id));
   }
 
-  async function submit() {
+  async function submit(isFreeOrder = false) {
     if (!formValid || submitting) return;
 
     if (anyVip && !vipSelectedTable) {
@@ -446,7 +465,7 @@ export default function PosClient() {
     setResult(null);
 
     try {
-      const payload = {
+      const payload: any = {
         customer: {
           email: email.trim() || undefined,
           phone: phone.trim() || undefined,
@@ -462,6 +481,11 @@ export default function PosClient() {
         vip: anyVip && vipSelectedTable ? { tableLabel: vipSelectedTable } : undefined,
       };
 
+      if (isFreeOrder) {
+        payload.isFreeOrder = true;
+        payload.freeOrderPassword = freePassword;
+      }
+
       const res = await fetch("/api/admin/pos/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -471,18 +495,126 @@ export default function PosClient() {
       const json = (await res.json().catch(() => ({}))) as CreateResponse;
 
       if (!res.ok || !json.ok) {
-        throw new Error(
-          (json as any)?.error?.message || "A apărut o eroare la generare.",
-        );
+        const errorMsg = (json as any)?.error?.message || "A apărut o eroare la generare.";
+
+        // If this is a free order and password error, show it in the modal
+        if (isFreeOrder && res.status === 403) {
+          setFreePasswordError(errorMsg);
+          setSubmitting(false);
+          return;
+        }
+
+        throw new Error(errorMsg);
       }
 
       setResult(json);
+      // Reset free modal state
+      setShowFreeModal(false);
+      setFreePassword("");
+      setFreePasswordError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Eroare necunoscută.");
     } finally {
       setSubmitting(false);
     }
   }
+
+  // --- Password verification for free orders ---
+  const handleFreeOrderSubmit = () => {
+    if (!freePassword.trim()) {
+      setFreePasswordError("Te rog introdu parola");
+      return;
+    }
+
+    // Note: Password verification happens on the server side for security.
+    // We'll send the password and let the API validate it.
+    setFreePasswordError(null);
+    void submit(true);
+  };
+
+  const FreeOrderPasswordModal = () => {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div className="bg-[#1A0B2E] border border-[#4C2A85] rounded-2xl w-full max-w-md flex flex-col shadow-[0_0_50px_rgba(127,19,236,0.5)] overflow-hidden">
+          <div className="p-6 border-b border-[#4C2A85] flex justify-between items-center bg-[#241242]">
+            <div>
+              <h3 className="text-white text-xl font-bold">Comandă Gratuită</h3>
+              <p className="text-indigo-300 text-sm">Introducere parolă necesară</p>
+            </div>
+            <button
+              onClick={() => {
+                setShowFreeModal(false);
+                setFreePassword("");
+                setFreePasswordError(null);
+              }}
+              className="text-indigo-300 hover:text-white transition-colors"
+              type="button"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+
+          <div className="p-6 bg-[#130026]">
+            <div className="rounded-xl border border-[#FFD700]/20 bg-[#FFD700]/5 p-4 mb-6 text-sm text-[#FFD700]">
+              <p className="font-semibold">⚠ Atenție:</p>
+              <p className="mt-2 text-xs text-indigo-200">
+                Această acțiune va genera o comandă cu total <span className="font-bold text-white">0 lei</span>. Această funcție este destinată doar biletelor de promovare sau complimentare.
+              </p>
+            </div>
+
+            <label className="block">
+              <span className="text-xs font-semibold text-indigo-200">
+                Parolă
+              </span>
+              <input
+                type="password"
+                value={freePassword}
+                onChange={(e) => {
+                  setFreePassword(e.target.value);
+                  setFreePasswordError(null);
+                }}
+                onKeyPress={(e) => {
+                  if (e.key === "Enter") {
+                    handleFreeOrderSubmit();
+                  }
+                }}
+                placeholder="Introdu parola"
+                className="mt-2 h-11 w-full rounded-xl bg-[#1A0B2E] border border-[#432C7A] px-3 text-white outline-none focus:border-[#FFD700]/60 placeholder:text-indigo-400"
+              />
+            </label>
+
+            {freePasswordError && (
+              <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-100">
+                {freePasswordError}
+              </div>
+            )}
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  setShowFreeModal(false);
+                  setFreePassword("");
+                  setFreePasswordError(null);
+                }}
+                className="h-11 rounded-xl border border-[#432C7A] bg-[#24123E] text-white font-bold text-sm hover:border-[#4C2A85] transition-colors"
+                type="button"
+              >
+                Anulează
+              </button>
+              <button
+                onClick={handleFreeOrderSubmit}
+                disabled={submitting}
+                className="h-11 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FDB931] text-[#24123E] font-bold text-sm hover:shadow-[0_0_20px_rgba(255,215,0,0.3)] disabled:opacity-50 transition-all"
+                type="button"
+              >
+                {submitting ? "Se generează..." : "Confirmă"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // --- VIP UI components ---
   const VipTableSelectorModal = ({
@@ -611,6 +743,7 @@ export default function PosClient() {
           onClose={() => setVipActiveZone(null)}
         />
       ) : null}
+      {showFreeModal ? <FreeOrderPasswordModal /> : null}
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 py-8">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
@@ -962,22 +1095,42 @@ export default function PosClient() {
                 </div>
               ) : null}
 
-              <button
-                type="button"
-                onClick={submit}
-                disabled={!formValid || submitting}
-                className={cn(
-                  "w-full h-12 rounded-xl font-black transition-all flex items-center justify-center gap-2",
-                  formValid && !submitting
-                    ? "bg-gradient-to-r from-[#FFD700] to-[#FDB931] text-[#24123E] shadow-[0_0_20px_rgba(255,215,0,0.22)] hover:shadow-[0_0_30px_rgba(255,215,0,0.35)]"
-                    : "bg-[#24123E] border border-[#432C7A] text-indigo-300 cursor-not-allowed",
-                )}
-              >
-                <span className="material-symbols-outlined">
-                  {submitting ? "progress_activity" : "confirmation_number"}
-                </span>
-                {submitting ? "Se generează..." : "Generează biletele"}
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => submit()}
+                  disabled={!formValid || submitting}
+                  className={cn(
+                    "h-12 rounded-xl font-black transition-all flex items-center justify-center gap-2",
+                    formValid && !submitting
+                      ? "bg-gradient-to-r from-[#FFD700] to-[#FDB931] text-[#24123E] shadow-[0_0_20px_rgba(255,215,0,0.22)] hover:shadow-[0_0_30px_rgba(255,215,0,0.35)]"
+                      : "bg-[#24123E] border border-[#432C7A] text-indigo-300 cursor-not-allowed",
+                  )}
+                >
+                  <span className="material-symbols-outlined">
+                    {submitting ? "progress_activity" : "confirmation_number"}
+                  </span>
+                  {submitting ? "Se generează..." : "Generează"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowFreeModal(true)}
+                  disabled={!formValid || submitting}
+                  className={cn(
+                    "h-12 rounded-xl font-black transition-all flex items-center justify-center gap-2",
+                    formValid && !submitting
+                      ? "bg-gradient-to-r from-[#FF6B6B] to-[#FF5252] text-white shadow-[0_0_20px_rgba(255,107,107,0.22)] hover:shadow-[0_0_30px_rgba(255,107,107,0.35)]"
+                      : "bg-[#24123E] border border-[#432C7A] text-indigo-300 cursor-not-allowed",
+                  )}
+                  title="Generează o comandă cu total 0 lei (necesită parolă)"
+                >
+                  <span className="material-symbols-outlined">
+                    {submitting ? "progress_activity" : "shield"}
+                  </span>
+                  {submitting ? "Se generează..." : "Comandă Gratuită"}
+                </button>
+              </div>
 
               <p className="mt-3 text-xs text-indigo-200">
                 Dacă nu vrei email, debifează opțiunea și tipărește direct
