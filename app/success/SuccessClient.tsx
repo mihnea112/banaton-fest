@@ -115,6 +115,8 @@ function normalizeTicketsPayload(input: TicketsPublicResponse): TicketsPublicRes
 function labelCategory(category: unknown) {
   const c = String(category || "").toLowerCase();
   if (c === "vip") return "VIP";
+  if (c === "parter") return "Parter";
+  if (c === "scaun") return "Scaun";
   // IMPORTANT: General Access is called Fan Pit
   return "Fan Pit";
 }

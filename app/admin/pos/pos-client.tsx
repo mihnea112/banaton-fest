@@ -12,7 +12,8 @@ type ProductKey =
   | "VIP_1DAY"
   | "VIP_4DAY"
   | "PARTER_1DAY"
-  | "PARTER_4DAY";
+  | "PARTER_4DAY"
+  | "SCAUN_1DAY";
 
 type PosLine = {
   id: string;
@@ -136,6 +137,13 @@ const PRODUCTS: Array<{
     title: "Parter — 4 zile",
     subtitle: "Acces complet 4 zile",
     requiresDays: "none",
+  },
+  {
+    code: "SCAUN_1DAY",
+    title: "Scaun — 1 zi",
+    subtitle: "Loc pe scaun tip teatru (doar Vineri și Duminică)",
+    requiresDays: "pick1",
+    allowedDays: ["FRI", "SUN"],
   },
 ];
 

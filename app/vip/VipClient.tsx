@@ -13,7 +13,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 type ApiOrderItem = {
   id?: string;
   productCode?: string;
-  category?: "general" | "vip";
+  category?: "general" | "vip" | "parter" | "scaun";
   qty?: number;
   quantity?: number;
   unitPrice?: number;

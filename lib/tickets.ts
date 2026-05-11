@@ -1,5 +1,5 @@
 export type DayCode = "FRI" | "SAT" | "SUN" | "MON";
-export type Category = "general" | "vip" | "parter";
+export type Category = "general" | "vip" | "parter" | "scaun";
 
 export type ProductCode =
   | "GENERAL_1_DAY"
@@ -9,7 +9,8 @@ export type ProductCode =
   | "VIP_1_DAY"
   | "VIP_4_DAY"
   | "PARTER_1_DAY"
-  | "PARTER_4_DAY";
+  | "PARTER_4_DAY"
+  | "SCAUN_1_DAY";
 
 export const ALL_DAY_CODES: DayCode[] = ["FRI", "SAT", "SUN", "MON"];
 export const NON_SAT_DAY_CODES: DayCode[] = ["FRI", "SUN", "MON"];
@@ -84,6 +85,15 @@ export function validateSelection(productCode: ProductCode, selectedDayCodes?: s
       return { valid: true, days: ALL_DAY_CODES };
     }
 
+    case "SCAUN_1_DAY": {
+      if (days.length !== 1) return { valid: false, message: "SCAUN_1_DAY necesită exact 1 zi." };
+      // SCAUN only available Friday and Sunday
+      if (days[0] !== "FRI" && days[0] !== "SUN") {
+        return { valid: false, message: "Locurile pe scaun sunt disponibile doar Vineri și Duminică." };
+      }
+      return { valid: true, days };
+    }
+
     default:
       return { valid: false, message: "Product code invalid." };
   }
@@ -109,19 +119,32 @@ export function computeUnitPrice(productCode: ProductCode, selectedDayCodes?: st
 
     case "VIP_1_DAY": {
       if (days.length !== 1) throw new Error("VIP_1_DAY requires exactly 1 day.");
-      return days[0] === "SAT" ? 350 : 200;
+      // VIP: 400 lei for CECA (SAT), 300 lei for other days
+      return days[0] === "SAT" ? 400 : 300;
     }
 
     case "VIP_4_DAY":
-      return 750;
+      // VIP 4-day package: 850 lei/seat
+      return 850;
 
     case "PARTER_1_DAY": {
       if (days.length !== 1) throw new Error("PARTER_1_DAY requires exactly 1 day.");
-      return days[0] === "SAT" ? 60 : 40;
+      // PARTER: 100 lei for CECA (SAT), 75 lei for other days
+      return days[0] === "SAT" ? 100 : 75;
     }
 
     case "PARTER_4_DAY":
+      // PARTER 4-day package: 150 lei/seat (includes CECA)
+      return 150;
+
+    case "SCAUN_1_DAY": {
+      if (days.length !== 1) throw new Error("SCAUN_1_DAY requires exactly 1 day.");
+      // SCAUN: 100 lei for FRI and SUN only, NOT available SAT/MON
+      if (days[0] === "SAT" || days[0] === "MON") {
+        throw new Error("SCAUN seats are not available on Saturday (CECA) or Monday");
+      }
       return 100;
+    }
 
     default:
       throw new Error("Unknown product code");
@@ -131,6 +154,7 @@ export function computeUnitPrice(productCode: ProductCode, selectedDayCodes?: st
 export function categoryFromProductCode(productCode: ProductCode): Category {
   if (productCode.startsWith("VIP")) return "vip";
   if (productCode.startsWith("PARTER")) return "parter";
+  if (productCode.startsWith("SCAUN")) return "scaun";
   return "general";
 }
 
@@ -144,6 +168,7 @@ export function labelFromProductCode(productCode: ProductCode): string {
     case "VIP_4_DAY": return "VIP - 4 zile";
     case "PARTER_1_DAY": return "Parter - 1 zi";
     case "PARTER_4_DAY": return "Parter - 4 zile";
+    case "SCAUN_1_DAY": return "Scaun - 1 zi";
     default: return productCode;
   }
 }

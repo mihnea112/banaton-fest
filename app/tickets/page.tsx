@@ -115,6 +115,14 @@ const PRODUCT_I18N: Record<string, { roName?: string; enName?: string; roDesc?: 
     roDesc: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 40 RON / Sâmbătă (30.05): 60 RON",
     enDesc: "Fri (29.05), Sun (31.05) & Mon (01.06): 40 RON / Sat (30.05): 60 RON",
   },
+  "scaun-1day": {
+    roName: "Scaun - 1 Zi",
+    enName: "Chair - 1 Day",
+    roDuration: "1 Zi",
+    enDuration: "1 Day",
+    roDesc: "Loc pe scaun tip teatru. Doar Vineri și Duminică. 500 scaune disponibile. Recomandate pentru vârstnici.",
+    enDesc: "Theater-style seated ticket. Friday and Sunday only. 500 seats available. Recommended for seniors.",
+  },
 };
 
 const VARIANT_I18N: Record<string, { ro: string; en: string }> = {
@@ -137,6 +145,9 @@ const VARIANT_I18N: Record<string, { ro: string; en: string }> = {
   "parter-1day-sat": { ro: "Sâmbătă (30.05)", en: "Saturday (30.05)" },
   "parter-1day-sun": { ro: "Duminică (31.05)", en: "Sunday (31.05)" },
   "parter-1day-mon": { ro: "Luni (01.06)", en: "Monday (01.06)" },
+  // Scaun 1-day
+  "scaun-1day-fri": { ro: "Vineri (29.05)", en: "Friday (29.05)" },
+  "scaun-1day-sun": { ro: "Duminică (31.05)", en: "Sunday (31.05)" },
 };
 
 function localizeProduct(locale: Locale, p: TicketProduct) {
@@ -155,7 +166,7 @@ function localizeVariantLabel(locale: Locale, variantId: string, fallback: strin
 }
 
 
-type TicketCategory = "general" | "vip" | "parter";
+type TicketCategory = "general" | "vip" | "parter" | "scaun";
 
 type DayCodeLower = "fri" | "sat" | "sun" | "mon";
 
@@ -361,7 +372,8 @@ type ApiProductCode =
   | "VIP_1_DAY"
   | "VIP_4_DAY"
   | "PARTER_1_DAY"
-  | "PARTER_4_DAY";
+  | "PARTER_4_DAY"
+  | "SCAUN_1_DAY";
 
 type ApiDraftCreateResponse = {
   ok?: boolean;
@@ -376,59 +388,13 @@ type ApiErrorLike = {
 };
 
 const PRODUCTS: TicketProduct[] = [
-  // Fan Pit
-  {
-    id: "gen-4day",
-    category: "general",
-    name: "Abonament 4 Zile",
-    durationLabel: "4 Zile",
-    price: 120,
-    description:
-      "Acces Fan Pit pentru toate cele 4 zile ale festivalului (29.05–01.06.2026)",
-  },
-  {
-    id: "gen-3day",
-    category: "general",
-    name: "Abonament 3 Zile",
-    durationLabel: "3 Zile",
-    price: 80,
-    description: "Valabil pentru Vineri (29.05) + Duminică (31.05) + Luni (01.06)",
-  },
-  {
-    id: "gen-2day",
-    category: "general",
-    name: "Abonament 2 Zile",
-    durationLabel: "2 Zile",
-    price: 60,
-    description: "Alege orice 2 zile dintre Vineri (29.05), Duminică (31.05) și Luni (01.06)",
-    variants: [
-      { id: "gen-2day-fri-sun", label: "Vineri (29.05) + Duminică (31.05)", price: 60 },
-      { id: "gen-2day-fri-mon", label: "Vineri (29.05) + Luni (01.06)", price: 60 },
-      { id: "gen-2day-sun-mon", label: "Duminică (31.05) + Luni (01.06)", price: 60 },
-    ],
-  },
-  {
-    id: "gen-1day",
-    category: "general",
-    name: "Bilet 1 Zi",
-    durationLabel: "1 Zi",
-    price: 50,
-    description: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 50 RON / Sâmbătă (30.05): 80 RON",
-    variants: [
-      { id: "gen-1day-fri", label: "Vineri (29.05)", price: 50 },
-      { id: "gen-1day-sat", label: "Sâmbătă (30.05)", price: 80 },
-      { id: "gen-1day-sun", label: "Duminică (31.05)", price: 50 },
-      { id: "gen-1day-mon", label: "Luni (01.06)", price: 50 },
-    ],
-  },
-
   // VIP
   {
     id: "vip-4day",
     category: "vip",
     name: "VIP 4 Zile",
     durationLabel: "4 Zile",
-    price: 750,
+    price: 850,
     description:
       "Acces VIP pentru toate cele 4 zile (masa se selectează în pagina de mese VIP)",
   },
@@ -437,13 +403,13 @@ const PRODUCTS: TicketProduct[] = [
     category: "vip",
     name: "VIP - 1 Zi",
     durationLabel: "1 Zi",
-    price: 200,
+    price: 300,
     description: "Include loc la masă (selectezi masa în pagina de mese VIP)",
     variants: [
-      { id: "vip-1day-fri", label: "Vineri (29.05)", price: 200 },
-      { id: "vip-1day-sat", label: "Sâmbătă (30.05) (CECA)", price: 350 },
-      { id: "vip-1day-sun", label: "Duminică (31.05)", price: 200 },
-      { id: "vip-1day-mon", label: "Luni (01.06)", price: 200 },
+      { id: "vip-1day-fri", label: "Vineri (29.05)", price: 300 },
+      { id: "vip-1day-sat", label: "Sâmbătă (30.05) (CECA)", price: 400 },
+      { id: "vip-1day-sun", label: "Duminică (31.05)", price: 300 },
+      { id: "vip-1day-mon", label: "Luni (01.06)", price: 300 },
     ],
   },
 
@@ -453,7 +419,7 @@ const PRODUCTS: TicketProduct[] = [
     category: "parter",
     name: "Parter 4 Zile",
     durationLabel: "4 Zile",
-    price: 100,
+    price: 150,
     description:
       "Acces Parter pentru toate cele 4 zile ale festivalului (29.05–01.06.2026)",
   },
@@ -462,13 +428,27 @@ const PRODUCTS: TicketProduct[] = [
     category: "parter",
     name: "Parter - 1 Zi",
     durationLabel: "1 Zi",
-    price: 40,
-    description: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 40 RON / Sâmbătă (30.05): 60 RON",
+    price: 75,
+    description: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 75 RON / Sâmbătă (30.05): 100 RON",
     variants: [
-      { id: "parter-1day-fri", label: "Vineri (29.05)", price: 40 },
-      { id: "parter-1day-sat", label: "Sâmbătă (30.05)", price: 60 },
-      { id: "parter-1day-sun", label: "Duminică (31.05)", price: 40 },
-      { id: "parter-1day-mon", label: "Luni (01.06)", price: 40 },
+      { id: "parter-1day-fri", label: "Vineri (29.05)", price: 75 },
+      { id: "parter-1day-sat", label: "Sâmbătă (30.05)", price: 100 },
+      { id: "parter-1day-sun", label: "Duminică (31.05)", price: 75 },
+      { id: "parter-1day-mon", label: "Luni (01.06)", price: 75 },
+    ],
+  },
+
+  // Scaun
+  {
+    id: "scaun-1day",
+    category: "scaun",
+    name: "Scaun - 1 Zi",
+    durationLabel: "1 Zi",
+    price: 100,
+    description: "Loc pe scaun tip teatru. Doar Vineri și Duminică. 500 scaune disponibile. Recomandate pentru vârstnici.",
+    variants: [
+      { id: "scaun-1day-fri", label: "Vineri (29.05)", price: 100 },
+      { id: "scaun-1day-sun", label: "Duminică (31.05)", price: 100 },
     ],
   },
 ];
@@ -481,10 +461,103 @@ export default function Tickets() {
     setLocale(getLocaleFromCookie());
   }, []);
 
+  // Load products from database
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProducts() {
+      setIsLoadingProducts(true);
+      try {
+        const res = await fetch("/api/catalog", {
+          method: "GET",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+
+        const json = (await res.json().catch(() => ({}))) as any;
+
+        if (!res.ok || !json?.ok) {
+          // Fallback to empty products if API fails
+          if (!cancelled) setDynamicProducts([]);
+          return;
+        }
+
+        const products = json.products || [];
+        const prices = json.prices || [];
+
+        // Build product list from database
+        const builtProducts: TicketProduct[] = [];
+
+        for (const product of products) {
+          const code = String(product.code || "").toUpperCase();
+          const category = String(product.category || "").toLowerCase();
+
+          // Get prices for this product
+          const productPrices = prices.filter(
+            (p: any) => p.ticket_product_id === product.id && p.is_active
+          );
+
+          // Build variants by day
+          const variants: ProductVariant[] = [];
+          const dayVariantMap: Record<string, ProductVariant[]> = {};
+
+          for (const price of productPrices) {
+            const daySet = String(price.canonical_day_set || "");
+            if (!dayVariantMap[daySet]) dayVariantMap[daySet] = [];
+
+            // Create variant ID based on code and day set
+            const variantId = daySet
+              ? `${code.toLowerCase()}-${daySet.toLowerCase().replace(/,/g, "-")}`
+              : `${code.toLowerCase()}-all`;
+
+            dayVariantMap[daySet].push({
+              id: variantId,
+              label: daySet || "4 zile",
+              price: Number(price.price_ron || 0),
+            });
+          }
+
+          // Flatten variants
+          const allVariants = Object.values(dayVariantMap).flat();
+          const basePrice = allVariants.length > 0 ? Math.min(...allVariants.map(v => v.price)) : 0;
+
+          const localized = PRODUCT_I18N[code.toLowerCase()] || {};
+
+          builtProducts.push({
+            id: code.toLowerCase(),
+            category: category as TicketCategory,
+            name: localized.roName || product.name_ro || code,
+            durationLabel: localized.roDuration || "",
+            price: basePrice,
+            description: localized.roDesc || "",
+            variants: allVariants.length > 0 ? allVariants : undefined,
+          });
+        }
+
+        if (!cancelled) setDynamicProducts(builtProducts);
+      } catch (e) {
+        console.warn("[tickets] loadProducts error:", e);
+        if (!cancelled) setDynamicProducts([]);
+      } finally {
+        if (!cancelled) setIsLoadingProducts(false);
+      }
+    }
+
+    void loadProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [cart, setCart] = useState<Record<string, number>>({});
   const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Dynamic products from database
+  const [dynamicProducts, setDynamicProducts] = useState<TicketProduct[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
 
   // Fan Pit availability (remaining tickets) per day
   const [fanPitAvailability, setFanPitAvailability] = useState<AvailabilityByDay>({});
@@ -644,6 +717,7 @@ export default function Tickets() {
         if (id === "vip-4day") return "VIP_4_DAY";
         if (id.startsWith("parter-1day-")) return "PARTER_1_DAY";
         if (id === "parter-4day") return "PARTER_4_DAY";
+        if (id.startsWith("scaun-1day-")) return "SCAUN_1_DAY";
         return null;
       })();
 
@@ -699,6 +773,9 @@ export default function Tickets() {
       "parter-1day-sun": ["sun"],
       "parter-1day-mon": ["mon"],
       "parter-4day": ["fri", "sat", "sun", "mon"],
+
+      "scaun-1day-fri": ["fri"],
+      "scaun-1day-sun": ["sun"],
     };
 
     return map[cartId] ?? [];
@@ -1085,26 +1162,6 @@ export default function Tickets() {
               </p>
             </div>
 
-            {/* Fan Pit Section */}
-            <section>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="size-10 rounded-xl bg-brand-surface border border-white/10 flex items-center justify-center shadow-lg">
-                  <span className="material-symbols-outlined text-white">
-                    confirmation_number
-                  </span>
-                </div>
-                <h2 className="text-2xl font-bold tracking-tight text-white">
-                  Fan Pit
-                </h2>
-              </div>
-
-              <div className="flex flex-col gap-4">
-                {PRODUCTS.filter((p) => p.category === "general").map(
-                  renderProductRow,
-                )}
-              </div>
-            </section>
-
             {/* VIP Section */}
             <section>
               <div className="flex items-center gap-3 mb-6">
@@ -1121,8 +1178,10 @@ export default function Tickets() {
                 {t(locale, "Selecția mesei se face după apăsarea butonului de continuare.", "Table selection happens after you continue.")}
               </p>
               <div className="flex flex-col gap-4">
-                {PRODUCTS.filter((p) => p.category === "vip").map(
-                  renderProductRow,
+                {isLoadingProducts ? (
+                  <p className="text-brand-text/50">{t(locale, "Se încarcă biletele...", "Loading tickets...")}</p>
+                ) : (
+                  dynamicProducts.filter((p) => p.category === "vip").map(renderProductRow)
                 )}
               </div>
             </section>
@@ -1143,8 +1202,34 @@ export default function Tickets() {
                 {t(locale, "Acces Parter fără alocație de masă.", "Parter access without table allocation.")}
               </p>
               <div className="flex flex-col gap-4">
-                {PRODUCTS.filter((p) => p.category === "parter").map(
-                  renderProductRow,
+                {isLoadingProducts ? (
+                  <p className="text-brand-text/50">{t(locale, "Se încarcă biletele...", "Loading tickets...")}</p>
+                ) : (
+                  dynamicProducts.filter((p) => p.category === "parter").map(renderProductRow)
+                )}
+              </div>
+            </section>
+
+            {/* Scaun Section */}
+            <section>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="size-10 rounded-xl bg-brand-surface border border-purple-400/30 flex items-center justify-center shadow-lg shadow-purple-400/10">
+                  <span className="material-symbols-outlined text-purple-400">
+                    event_seat
+                  </span>
+                </div>
+                <h2 className="text-2xl font-bold tracking-tight text-white">
+                  {t(locale, "Locuri pe Scaun", "Theater Seats")}
+                </h2>
+              </div>
+              <p className="text-sm text-brand-text/70">
+                {t(locale, "Locuri pe scaun tip teatru, disponibile doar Vineri și Duminică.", "Theater-style seated tickets, available Friday and Sunday only.")}
+              </p>
+              <div className="flex flex-col gap-4">
+                {isLoadingProducts ? (
+                  <p className="text-brand-text/50">{t(locale, "Se încarcă biletele...", "Loading tickets...")}</p>
+                ) : (
+                  dynamicProducts.filter((p) => p.category === "scaun").map(renderProductRow)
                 )}
               </div>
             </section>
@@ -1219,7 +1304,9 @@ export default function Tickets() {
                                     ? "VIP"
                                     : product.category === "parter"
                                       ? "Parter"
-                                      : "Fan Pit"}
+                                      : product.category === "scaun"
+                                        ? "Scaun"
+                                        : "Fan Pit"}
                                 </p>
                               </div>
                               <p className="font-bold text-white text-sm">

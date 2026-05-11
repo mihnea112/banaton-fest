@@ -116,7 +116,7 @@ export default function Footer() {
         : "Festival 4 zile · 29.05 – 01.06.2026",
       tagline: isEN
         ? "Fan Pit and VIP tickets available online."
-        : "Bilete Fan Pit și VIP disponibile online.",
+        : "Bilete Parter și VIP disponibile online.",
 
       navTitle: isEN ? "Navigation" : "Navigare",
       home: isEN ? "Home" : "Acasă",
@@ -134,9 +134,6 @@ export default function Footer() {
       copyright: isEN
         ? "© 2026 Banaton Fest. All rights reserved."
         : "© 2026 Banaton Fest. Toate drepturile rezervate.",
-      platform: isEN
-        ? "Ticketing platform • Fan Pit & VIP"
-        : "Platformă bilete • Fan Pit & VIP",
     };
   }, [lang]);
 
@@ -215,7 +212,6 @@ export default function Footer() {
 
         <div className="flex flex-col items-start justify-between gap-3 border-t border-white/10 pt-4 text-xs text-brand-text/70 md:flex-row md:items-center">
           <p>{t.copyright}</p>
-          <p>{t.platform}</p>
         </div>
       </div>
     </footer>

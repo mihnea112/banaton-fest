@@ -11,7 +11,7 @@ interface DraftOrderItem {
   qty?: number;
   quantity?: number; // legacy fallback
 
-  category: "general" | "vip" | "parter";
+  category: "general" | "vip" | "parter" | "scaun";
 
   name?: string;
   label?: string; // legacy fallback
@@ -71,6 +71,7 @@ function displayCategoryLabel(category: DraftOrderItem["category"]) {
   // IMPORTANT: "general" is named "Fan Pit" across the site.
   if (category === "vip") return "VIP";
   if (category === "parter") return "Parter";
+  if (category === "scaun") return "Scaun";
   return "Fan Pit";
 }
 

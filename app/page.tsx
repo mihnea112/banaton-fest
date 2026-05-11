@@ -842,40 +842,7 @@ export default function Home() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-                  <h3 className="text-xl font-bold text-white mb-4">
-                    {t.prices_fanpit}
-                  </h3>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
-                      <span className="text-gray-300">
-                        {t.prices_pack_4days}
-                      </span>
-                      <span className="font-bold text-accent-cyan">
-                        120 lei
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
-                      <span className="text-gray-300">
-                        {t.prices_single_day}
-                      </span>
-                      <span className="font-bold text-accent-cyan">50 lei</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
-                      <span className="text-gray-300">{t.prices_sat_ceca}</span>
-                      <span className="font-bold text-accent-gold">80 lei</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
-                      <span className="text-gray-300">{t.prices_2day}</span>
-                      <span className="font-bold text-accent-cyan">60 lei</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-gray-300">{t.prices_3day}</span>
-                      <span className="font-bold text-accent-cyan">80 lei</span>
-                    </div>
-                  </div>
-                </div>
-
+                {/* VIP - Updated pricing */}
                 <div className="rounded-2xl border border-accent-gold/20 bg-accent-gold/5 p-5">
                   <h3 className="text-xl font-bold text-white mb-4">
                     {t.prices_vip}
@@ -886,13 +853,13 @@ export default function Home() {
                         {t.prices_vip_single}
                       </span>
                       <span className="font-bold text-accent-gold">
-                        200 lei
+                        300 lei
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
                       <span className="text-gray-300">{t.prices_vip_sat}</span>
                       <span className="font-bold text-accent-gold">
-                        350 lei
+                        400 lei
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
@@ -900,15 +867,19 @@ export default function Home() {
                         {t.prices_vip_4days}
                       </span>
                       <span className="font-bold text-accent-gold">
-                        750 lei
+                        850 lei
                       </span>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-4">
+                  <p className="text-xs text-gray-300 mt-4 font-semibold">
+                    🅿️ FIECARE MASĂ VIP ARE UN LOC PENTRU PARCARE ASIGURATĂ!!!
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">
                     {t.prices_vip_note}
                   </p>
                 </div>
 
+                {/* PARTER - Updated pricing */}
                 <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-5">
                   <h3 className="text-xl font-bold text-white mb-4">
                     {t.prices_parter}
@@ -919,24 +890,44 @@ export default function Home() {
                         {t.prices_parter_4days}
                       </span>
                       <span className="font-bold text-accent-cyan">
-                        100 lei
+                        150 lei
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
                       <span className="text-gray-300">
                         {t.prices_parter_single}
                       </span>
-                      <span className="font-bold text-accent-cyan">40 lei</span>
+                      <span className="font-bold text-accent-cyan">75 lei</span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
                       <span className="text-gray-300">
                         {t.prices_parter_sat}
                       </span>
-                      <span className="font-bold text-accent-cyan">60 lei</span>
+                      <span className="font-bold text-accent-cyan">100 lei</span>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-4">
                     {t.prices_parter_note}
+                  </p>
+                </div>
+
+                {/* SCAUN - New category */}
+                <div className="rounded-2xl border border-purple-400/20 bg-purple-500/5 p-5">
+                  <h3 className="text-xl font-bold text-white mb-4">
+                    Acces Scaun
+                  </h3>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
+                      <span className="text-gray-300">
+                        Vineri sau Duminică
+                      </span>
+                      <span className="font-bold text-purple-300">
+                        100 lei
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-4">
+                    Loc pe scaun tip teatru. Doar Vineri și Duminică. 500 scaune disponibile. Recomandate pentru vârstnici.
                   </p>
                 </div>
               </div>
