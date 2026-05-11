@@ -461,108 +461,21 @@ export default function Tickets() {
     setLocale(getLocaleFromCookie());
   }, []);
 
-  // Load products from database
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadProducts() {
-      setIsLoadingProducts(true);
-      try {
-        const res = await fetch("/api/catalog", {
-          method: "GET",
-          cache: "no-store",
-          headers: { Accept: "application/json" },
-        });
-
-        const json = (await res.json().catch(() => ({}))) as any;
-
-        if (!res.ok || !json?.ok) {
-          // Fallback to empty products if API fails
-          if (!cancelled) setDynamicProducts([]);
-          return;
-        }
-
-        const products = json.products || [];
-        const prices = json.prices || [];
-
-        // Build product list from database
-        const builtProducts: TicketProduct[] = [];
-
-        for (const product of products) {
-          const code = String(product.code || "").toUpperCase();
-          const category = String(product.category || "").toLowerCase();
-
-          // Get prices for this product
-          const productPrices = prices.filter(
-            (p: any) => p.ticket_product_id === product.id && p.is_active
-          );
-
-          // Build variants by day
-          const variants: ProductVariant[] = [];
-          const dayVariantMap: Record<string, ProductVariant[]> = {};
-
-          for (const price of productPrices) {
-            const daySet = String(price.canonical_day_set || "");
-            if (!dayVariantMap[daySet]) dayVariantMap[daySet] = [];
-
-            // Create variant ID based on code and day set
-            const variantId = daySet
-              ? `${code.toLowerCase()}-${daySet.toLowerCase().replace(/,/g, "-")}`
-              : `${code.toLowerCase()}-all`;
-
-            dayVariantMap[daySet].push({
-              id: variantId,
-              label: daySet || "4 zile",
-              price: Number(price.price_ron || 0),
-            });
-          }
-
-          // Flatten variants
-          const allVariants = Object.values(dayVariantMap).flat();
-          const basePrice = allVariants.length > 0 ? Math.min(...allVariants.map(v => v.price)) : 0;
-
-          const localized = PRODUCT_I18N[code.toLowerCase()] || {};
-
-          builtProducts.push({
-            id: code.toLowerCase(),
-            category: category as TicketCategory,
-            name: localized.roName || product.name_ro || code,
-            durationLabel: localized.roDuration || "",
-            price: basePrice,
-            description: localized.roDesc || "",
-            variants: allVariants.length > 0 ? allVariants : undefined,
-          });
-        }
-
-        if (!cancelled) setDynamicProducts(builtProducts);
-      } catch (e) {
-        console.warn("[tickets] loadProducts error:", e);
-        if (!cancelled) setDynamicProducts([]);
-      } finally {
-        if (!cancelled) setIsLoadingProducts(false);
-      }
-    }
-
-    void loadProducts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const [cart, setCart] = useState<Record<string, number>>({});
   const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Dynamic products from database
-  const [dynamicProducts, setDynamicProducts] = useState<TicketProduct[]>([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
-
   // Fan Pit availability (remaining tickets) per day
   const [fanPitAvailability, setFanPitAvailability] = useState<AvailabilityByDay>({});
   const [fanPitPackageAvailability, setFanPitPackageAvailability] = useState<PackageAvailability>({});
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+
+  // VIP, PARTER, and SCAUN availability
+  const [vipAvailability, setVipAvailability] = useState<AvailabilityByDay>({});
+  const [parterAvailability, setParterAvailability] = useState<AvailabilityByDay>({});
+  const [scaunAvailability, setScaunAvailability] = useState<AvailabilityByDay>({});
+  const [isLoadingCategoryAvailability, setIsLoadingCategoryAvailability] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -618,6 +531,101 @@ export default function Tickets() {
     };
   }, []);
 
+  // Load VIP, PARTER, and SCAUN availability
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCategoryAvailability() {
+      setIsLoadingCategoryAvailability(true);
+      try {
+        const [vipRes, parterRes, scaunRes] = await Promise.all([
+          fetch("/api/vip/seats/availability?days=fri,sat,sun,mon", {
+            method: "GET",
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+          }),
+          fetch("/api/parter/availability?days=fri,sat,sun,mon", {
+            method: "GET",
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+          }),
+          fetch("/api/scaun/availability?days=fri,sun", {
+            method: "GET",
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+          }),
+        ]);
+
+        if (!cancelled) {
+          // Parse VIP
+          if (vipRes.ok) {
+            const vipJson = (await vipRes.json().catch(() => ({}))) as any;
+            const vipByDay: AvailabilityByDay = {};
+            if (vipJson?.byDay) {
+              for (const [day, info] of Object.entries(vipJson.byDay)) {
+                if (info && typeof (info as any).remaining === "number") {
+                  const dayLower = parseDayUpperToLower(day);
+                  if (dayLower) vipByDay[dayLower] = (info as any).remaining;
+                }
+              }
+            }
+            setVipAvailability(vipByDay);
+          } else {
+            setVipAvailability({});
+          }
+
+          // Parse PARTER
+          if (parterRes.ok) {
+            const parterJson = (await parterRes.json().catch(() => ({}))) as any;
+            const parterByDay: AvailabilityByDay = {};
+            if (parterJson?.byDay) {
+              for (const [day, info] of Object.entries(parterJson.byDay)) {
+                if (info && typeof (info as any).remaining === "number") {
+                  const dayLower = parseDayUpperToLower(day);
+                  if (dayLower) parterByDay[dayLower] = (info as any).remaining;
+                }
+              }
+            }
+            setParterAvailability(parterByDay);
+          } else {
+            setParterAvailability({});
+          }
+
+          // Parse SCAUN
+          if (scaunRes.ok) {
+            const scaunJson = (await scaunRes.json().catch(() => ({}))) as any;
+            const scaunByDay: AvailabilityByDay = {};
+            if (scaunJson?.byDay) {
+              for (const [day, info] of Object.entries(scaunJson.byDay)) {
+                if (info && typeof (info as any).remaining === "number") {
+                  const dayLower = parseDayUpperToLower(day);
+                  if (dayLower) scaunByDay[dayLower] = (info as any).remaining;
+                }
+              }
+            }
+            setScaunAvailability(scaunByDay);
+          } else {
+            setScaunAvailability({});
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setVipAvailability({});
+          setParterAvailability({});
+          setScaunAvailability({});
+        }
+      } finally {
+        if (!cancelled) setIsLoadingCategoryAvailability(false);
+      }
+    }
+
+    void loadCategoryAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const formatAvailability = (day: DayCodeLower) => {
     const v = fanPitAvailability[day];
     if (typeof v !== "number") return null;
@@ -639,6 +647,58 @@ export default function Tickets() {
     const n = getRemainingForDays(days);
     if (typeof n !== "number") return null;
     return `${n} ${t(locale, "disponibile", "available")}`;
+  };
+
+  const formatVipAvailability = (day: DayCodeLower) => {
+    const v = vipAvailability[day];
+    if (typeof v !== "number") return null;
+    return `${v} ${t(locale, "disponibile", "available")}`;
+  };
+
+  const getVipRemainingForDays = (days: DayCodeLower[]) => {
+    if (!days.length) return null;
+    const nums: number[] = [];
+    for (const d of days) {
+      const v = vipAvailability[d];
+      if (typeof v !== "number") return null;
+      nums.push(v);
+    }
+    return nums.length ? Math.min(...nums) : null;
+  };
+
+  const formatVipPackAvailability = (days: DayCodeLower[]) => {
+    const n = getVipRemainingForDays(days);
+    if (typeof n !== "number") return null;
+    return `${n} ${t(locale, "disponibile", "available")}`;
+  };
+
+  const formatParterAvailability = (day: DayCodeLower) => {
+    const v = parterAvailability[day];
+    if (typeof v !== "number") return null;
+    return `${v} ${t(locale, "disponibile", "available")}`;
+  };
+
+  const getParterRemainingForDays = (days: DayCodeLower[]) => {
+    if (!days.length) return null;
+    const nums: number[] = [];
+    for (const d of days) {
+      const v = parterAvailability[d];
+      if (typeof v !== "number") return null;
+      nums.push(v);
+    }
+    return nums.length ? Math.min(...nums) : null;
+  };
+
+  const formatParterPackAvailability = (days: DayCodeLower[]) => {
+    const n = getParterRemainingForDays(days);
+    if (typeof n !== "number") return null;
+    return `${n} ${t(locale, "disponibile", "available")}`;
+  };
+
+  const formatScaunAvailability = (day: DayCodeLower) => {
+    const v = scaunAvailability[day];
+    if (typeof v !== "number") return null;
+    return `${v} ${t(locale, "disponibile", "available")}`;
   };
 
   const dayFromVariantId = (variantId: string): DayCodeLower | null => {
@@ -1009,6 +1069,56 @@ export default function Tickets() {
                   </span>
                 );
               })()}
+              {/* VIP availability quick hint */}
+              {product.category === "vip" && product.id === "vip-1day" && (
+                <span className="text-[11px] text-brand-text/70">
+                  {isLoadingCategoryAvailability
+                    ? t(locale, "Se verifică disponibilitatea…", "Checking availability…")
+                    : Object.keys(vipAvailability).length
+                      ? t(locale, "Disponibilitate pe zile mai jos", "Availability by day below")
+                      : ""}
+                </span>
+              )}
+              {product.category === "vip" && product.id === "vip-4day" && (() => {
+                const days = mapCartIdToDayCodes(product.id);
+                const text = formatVipPackAvailability(days);
+                if (!text) return null;
+                return (
+                  <span className="text-[11px] text-brand-text/70">
+                    · {text}
+                  </span>
+                );
+              })()}
+              {/* Parter availability quick hint */}
+              {product.category === "parter" && product.id === "parter-1day" && (
+                <span className="text-[11px] text-brand-text/70">
+                  {isLoadingCategoryAvailability
+                    ? t(locale, "Se verifică disponibilitatea…", "Checking availability…")
+                    : Object.keys(parterAvailability).length
+                      ? t(locale, "Disponibilitate pe zile mai jos", "Availability by day below")
+                      : ""}
+                </span>
+              )}
+              {product.category === "parter" && product.id === "parter-4day" && (() => {
+                const days = mapCartIdToDayCodes(product.id);
+                const text = formatParterPackAvailability(days);
+                if (!text) return null;
+                return (
+                  <span className="text-[11px] text-brand-text/70">
+                    · {text}
+                  </span>
+                );
+              })()}
+              {/* Scaun availability quick hint */}
+              {product.category === "scaun" && product.id === "scaun-1day" && (
+                <span className="text-[11px] text-brand-text/70">
+                  {isLoadingCategoryAvailability
+                    ? t(locale, "Se verifică disponibilitatea…", "Checking availability…")
+                    : Object.keys(scaunAvailability).length
+                      ? t(locale, "Disponibilitate pe zile mai jos", "Availability by day below")
+                      : ""}
+                </span>
+              )}
             </div>
           </div>
 
@@ -1021,6 +1131,26 @@ export default function Tickets() {
             {product.category === "general" && (product.id === "gen-2day" || product.id === "gen-3day" || product.id === "gen-4day") && (() => {
               const days = mapCartIdToDayCodes(product.id);
               const text = formatPackAvailability(days);
+              if (!text) return null;
+              return (
+                <span className="hidden sm:block text-[12px] text-brand-text/70">
+                  {text}
+                </span>
+              );
+            })()}
+            {product.category === "vip" && (product.id === "vip-4day") && (() => {
+              const days = mapCartIdToDayCodes(product.id);
+              const text = formatVipPackAvailability(days);
+              if (!text) return null;
+              return (
+                <span className="hidden sm:block text-[12px] text-brand-text/70">
+                  {text}
+                </span>
+              );
+            })()}
+            {product.category === "parter" && (product.id === "parter-4day") && (() => {
+              const days = mapCartIdToDayCodes(product.id);
+              const text = formatParterPackAvailability(days);
               if (!text) return null;
               return (
                 <span className="hidden sm:block text-[12px] text-brand-text/70">
@@ -1068,6 +1198,24 @@ export default function Tickets() {
                       {t(locale, "(rămase:", "(remaining:")} {dayLabel(locale, "fri")} {fanPitAvailability.fri ?? "—"}, {dayLabel(locale, "sat")} {fanPitAvailability.sat ?? "—"}, {dayLabel(locale, "sun")} {fanPitAvailability.sun ?? "—"}, {dayLabel(locale, "mon")} {fanPitAvailability.mon ?? "—"})
                     </span>
                   </span>
+                ) : product.category === "vip" && product.id === "vip-1day" && Object.keys(vipAvailability).length > 0 ? (
+                  <span className="ml-2 text-xs font-normal text-brand-text/70">
+                    <span>
+                      {t(locale, "(rămase:", "(remaining:")} {dayLabel(locale, "fri")} {vipAvailability.fri ?? "—"}, {dayLabel(locale, "sat")} {vipAvailability.sat ?? "—"}, {dayLabel(locale, "sun")} {vipAvailability.sun ?? "—"}, {dayLabel(locale, "mon")} {vipAvailability.mon ?? "—"})
+                    </span>
+                  </span>
+                ) : product.category === "parter" && product.id === "parter-1day" && Object.keys(parterAvailability).length > 0 ? (
+                  <span className="ml-2 text-xs font-normal text-brand-text/70">
+                    <span>
+                      {t(locale, "(rămase:", "(remaining:")} {dayLabel(locale, "fri")} {parterAvailability.fri ?? "—"}, {dayLabel(locale, "sat")} {parterAvailability.sat ?? "—"}, {dayLabel(locale, "sun")} {parterAvailability.sun ?? "—"}, {dayLabel(locale, "mon")} {parterAvailability.mon ?? "—"})
+                    </span>
+                  </span>
+                ) : product.category === "scaun" && product.id === "scaun-1day" && Object.keys(scaunAvailability).length > 0 ? (
+                  <span className="ml-2 text-xs font-normal text-brand-text/70">
+                    <span>
+                      {t(locale, "(rămase:", "(remaining:")} {dayLabel(locale, "fri")} {scaunAvailability.fri ?? "—"}, {dayLabel(locale, "sun")} {scaunAvailability.sun ?? "—"})
+                    </span>
+                  </span>
                 ) : null}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1105,6 +1253,64 @@ export default function Tickets() {
                         {product.category === "general" && product.id === "gen-2day" && (() => {
                           const days = mapCartIdToDayCodes(variant.id);
                           const text = formatPackAvailability(days);
+                          if (!text) return null;
+                          return (
+                            <span className="text-[11px] font-semibold text-brand-text/70">
+                              · {text}
+                            </span>
+                          );
+                        })()}
+                        {/* VIP availability per day - shown only for 1-day variants */}
+                        {product.category === "vip" && product.id === "vip-1day" && (() => {
+                          const day = dayFromVariantId(variant.id);
+                          if (!day) return null;
+                          const text = formatVipAvailability(day);
+                          if (!text) return null;
+                          return (
+                            <span className="text-[11px] font-semibold text-brand-text/70">
+                              · {text}
+                            </span>
+                          );
+                        })()}
+                        {/* VIP 4-day availability */}
+                        {product.category === "vip" && product.id === "vip-4day" && (() => {
+                          const days = mapCartIdToDayCodes(product.id);
+                          const text = formatVipPackAvailability(days);
+                          if (!text) return null;
+                          return (
+                            <span className="text-[11px] font-semibold text-brand-text/70">
+                              · {text}
+                            </span>
+                          );
+                        })()}
+                        {/* Parter availability per day - shown only for 1-day variants */}
+                        {product.category === "parter" && product.id === "parter-1day" && (() => {
+                          const day = dayFromVariantId(variant.id);
+                          if (!day) return null;
+                          const text = formatParterAvailability(day);
+                          if (!text) return null;
+                          return (
+                            <span className="text-[11px] font-semibold text-brand-text/70">
+                              · {text}
+                            </span>
+                          );
+                        })()}
+                        {/* Parter 4-day availability */}
+                        {product.category === "parter" && product.id === "parter-4day" && (() => {
+                          const days = mapCartIdToDayCodes(product.id);
+                          const text = formatParterPackAvailability(days);
+                          if (!text) return null;
+                          return (
+                            <span className="text-[11px] font-semibold text-brand-text/70">
+                              · {text}
+                            </span>
+                          );
+                        })()}
+                        {/* Scaun availability per day */}
+                        {product.category === "scaun" && product.id === "scaun-1day" && (() => {
+                          const day = dayFromVariantId(variant.id);
+                          if (!day) return null;
+                          const text = formatScaunAvailability(day);
                           if (!text) return null;
                           return (
                             <span className="text-[11px] font-semibold text-brand-text/70">
@@ -1178,11 +1384,7 @@ export default function Tickets() {
                 {t(locale, "Selecția mesei se face după apăsarea butonului de continuare.", "Table selection happens after you continue.")}
               </p>
               <div className="flex flex-col gap-4">
-                {isLoadingProducts ? (
-                  <p className="text-brand-text/50">{t(locale, "Se încarcă biletele...", "Loading tickets...")}</p>
-                ) : (
-                  dynamicProducts.filter((p) => p.category === "vip").map(renderProductRow)
-                )}
+                {PRODUCTS.filter((p) => p.category === "vip").map(renderProductRow)}
               </div>
             </section>
 
@@ -1202,11 +1404,7 @@ export default function Tickets() {
                 {t(locale, "Acces Parter fără alocație de masă.", "Parter access without table allocation.")}
               </p>
               <div className="flex flex-col gap-4">
-                {isLoadingProducts ? (
-                  <p className="text-brand-text/50">{t(locale, "Se încarcă biletele...", "Loading tickets...")}</p>
-                ) : (
-                  dynamicProducts.filter((p) => p.category === "parter").map(renderProductRow)
-                )}
+                {PRODUCTS.filter((p) => p.category === "parter").map(renderProductRow)}
               </div>
             </section>
 
@@ -1226,11 +1424,7 @@ export default function Tickets() {
                 {t(locale, "Locuri pe scaun tip teatru, disponibile doar Vineri și Duminică.", "Theater-style seated tickets, available Friday and Sunday only.")}
               </p>
               <div className="flex flex-col gap-4">
-                {isLoadingProducts ? (
-                  <p className="text-brand-text/50">{t(locale, "Se încarcă biletele...", "Loading tickets...")}</p>
-                ) : (
-                  dynamicProducts.filter((p) => p.category === "scaun").map(renderProductRow)
-                )}
+                {PRODUCTS.filter((p) => p.category === "scaun").map(renderProductRow)}
               </div>
             </section>
 

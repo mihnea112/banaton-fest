@@ -222,15 +222,20 @@ export async function GET(req: Request) {
       );
 
       if (orderIds.length > 0) {
-        const { data: orders, error: ordersErr } = await supabase
-          .from("orders")
-          .select("id, status, payment_status")
-          .in("id", orderIds);
+        // Fetch orders in batches to avoid header overflow
+        const batchSize = 100;
+        for (let i = 0; i < orderIds.length; i += batchSize) {
+          const batch = orderIds.slice(i, i + batchSize);
+          const { data: orders, error: ordersErr } = await supabase
+            .from("orders")
+            .select("id, status, payment_status")
+            .in("id", batch);
 
-        if (ordersErr) throw ordersErr;
+          if (ordersErr) throw ordersErr;
 
-        for (const o of orders || []) {
-          if (isPaidOrder(o as any)) paidOrderIds.add(String((o as any).id));
+          for (const o of orders || []) {
+            if (isPaidOrder(o as any)) paidOrderIds.add(String((o as any).id));
+          }
         }
       }
     }
@@ -267,34 +272,45 @@ export async function GET(req: Request) {
     }
 
     // 6) Fallback: paid scaun order_items that might be missing order_item_days
-    if (paidOrderIds.size > 0) {
-      let query = supabase
-        .from("order_items")
-        .select("id, order_id, quantity, category, canonical_day_set")
-        .in("order_id", Array.from(paidOrderIds))
-        .eq("category", "scaun");
+    // Only query items linked to the event days we care about
+    if (paidOrderIds.size > 0 && eventDayIds.length > 0) {
+      // Get all order_item_ids linked to our event days (even if not already counted)
+      const { data: allOidRows, error: allOidErr } = await supabase
+        .from("order_item_days")
+        .select("order_item_id, event_day_id")
+        .in("event_day_id", eventDayIds);
 
-      // exclude those already counted via order_item_days
-      if (orderItemIdsWithDays.length > 0) {
-        query = query.not(
-          "id",
-          "in",
-          `(${orderItemIdsWithDays.map((x) => `"${x}"`).join(",")})`,
+      if (!allOidErr && allOidRows && allOidRows.length > 0) {
+        const allOrderItemIds = Array.from(
+          new Set((allOidRows || []).map((r: any) => String(r.order_item_id))),
         );
-      }
 
-      const { data: missingDayItems, error: missingErr } = await query;
+        if (allOrderItemIds.length > 0) {
+          const { data: allScaunItems, error: allScaunErr } = await supabase
+            .from("order_items")
+            .select("id, order_id, quantity, category, canonical_day_set")
+            .in("id", allOrderItemIds)
+            .eq("category", "scaun");
 
-      if (!missingErr && missingDayItems && missingDayItems.length > 0) {
-        for (const it of missingDayItems as any[]) {
-          const qty = Math.max(0, toInt(it.quantity, 0));
-          if (qty <= 0) continue;
+          if (!allScaunErr && allScaunItems && allScaunItems.length > 0) {
+            const alreadyCountedIds = new Set(orderItemIdsWithDays);
+            for (const it of allScaunItems as any[]) {
+              const orderId = String(it.order_id);
+              if (!paidOrderIds.has(orderId)) continue; // Only paid orders
 
-          const days = parseCanonicalDaySet(it.canonical_day_set);
-          for (const d of days) {
-            // only within requested days and FRI/SUN
-            if (!daysUpper.includes(d) || !["FRI", "SUN"].includes(d)) continue;
-            soldByDayCode[d] += qty;
+              const id = String(it.id);
+              if (alreadyCountedIds.has(id)) continue; // Skip already counted
+
+              const qty = Math.max(0, toInt(it.quantity, 0));
+              if (qty <= 0) continue;
+
+              const days = parseCanonicalDaySet(it.canonical_day_set);
+              for (const d of days) {
+                // only within requested days and FRI/SUN
+                if (!daysUpper.includes(d) || !["FRI", "SUN"].includes(d)) continue;
+                soldByDayCode[d] += qty;
+              }
+            }
           }
         }
       }

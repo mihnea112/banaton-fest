@@ -64,7 +64,7 @@ export default function Home() {
       program_stage_label: "Main Stage",
       program_day_label: "Ziua",
       prices_kicker: "Prețuri bilete",
-      prices_title: "Early Bird Tickets - Limitat",
+      prices_title: "Bilete Limitate",
       prices_buy_now: "Cumpără acum",
       prices_fanpit: "Fan Pit",
       prices_vip: "VIP",
@@ -108,7 +108,7 @@ export default function Home() {
       program_stage_label: "Main Stage",
       program_day_label: "Day",
       prices_kicker: "Ticket Prices",
-      prices_title: "Early Bird Tickets - Limited",
+      prices_title: "Tickets Limited",
       prices_buy_now: "Buy Now",
       prices_fanpit: "Fan Pit",
       prices_vip: "VIP",
@@ -751,15 +751,21 @@ export default function Home() {
                           className="object-contain object-center group-hover:scale-105 transition-transform duration-300"
                           priority={false}
                           onError={(e) => {
-                            const parent = (e.target as HTMLImageElement).parentElement;
+                            const parent = (e.target as HTMLImageElement)
+                              .parentElement;
                             if (parent) {
-                              (e.target as HTMLImageElement).style.display = "none";
-                              const fallback = parent.querySelector("[data-fallback]");
+                              (e.target as HTMLImageElement).style.display =
+                                "none";
+                              const fallback =
+                                parent.querySelector("[data-fallback]");
                               if (fallback) fallback.classList.remove("hidden");
                             }
                           }}
                         />
-                        <div data-fallback className="hidden absolute inset-0 flex items-center justify-center">
+                        <div
+                          data-fallback
+                          className="hidden absolute inset-0 flex items-center justify-center"
+                        >
                           <img
                             src="/images/logo.png"
                             alt="Banaton Fest"
@@ -903,7 +909,9 @@ export default function Home() {
                       <span className="text-gray-300">
                         {t.prices_parter_sat}
                       </span>
-                      <span className="font-bold text-accent-cyan">100 lei</span>
+                      <span className="font-bold text-accent-cyan">
+                        100 lei
+                      </span>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-4">
@@ -918,16 +926,13 @@ export default function Home() {
                   </h3>
                   <div className="space-y-3 text-sm">
                     <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-2">
-                      <span className="text-gray-300">
-                        Vineri sau Duminică
-                      </span>
-                      <span className="font-bold text-purple-300">
-                        100 lei
-                      </span>
+                      <span className="text-gray-300">Vineri sau Duminică</span>
+                      <span className="font-bold text-purple-300">100 lei</span>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-4">
-                    Loc pe scaun tip teatru. Doar Vineri și Duminică. 500 scaune disponibile. Recomandate pentru vârstnici.
+                    Loc pe scaun tip teatru. Doar Vineri și Duminică. 500 scaune
+                    disponibile. Recomandate pentru vârstnici.
                   </p>
                 </div>
               </div>

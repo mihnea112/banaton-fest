@@ -15,32 +15,24 @@ export async function GET() {
       supabaseAdmin.from("event_settings").select("*").limit(1).maybeSingle(),
       supabaseAdmin
         .from("event_days")
-        .select("*")
-        .order("sort_order", { ascending: true }),
+        .select("*"),
       supabaseAdmin
         .from("ticket_products")
         .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
+        .eq("is_active", true),
       supabaseAdmin
         .from("ticket_product_prices")
         .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
+        .eq("is_active", true),
       supabaseAdmin
         .from("vip_table_zones")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
+        .select("*"),
       supabaseAdmin
         .from("vip_tables")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
+        .select("*"),
       supabaseAdmin
         .from("vip_table_day_availability")
-        .select("*")
-        .order("created_at", { ascending: true }),
+        .select("*"),
     ]);
 
     const errors = [

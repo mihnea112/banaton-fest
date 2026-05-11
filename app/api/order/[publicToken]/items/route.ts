@@ -12,7 +12,8 @@ type ProductCode =
   | "VIP_1_DAY"
   | "VIP_4_DAY"
   | "PARTER_1_DAY"
-  | "PARTER_4_DAY";
+  | "PARTER_4_DAY"
+  | "SCAUN_1_DAY";
 
 type IncomingItem = {
   productCode: ProductCode;
@@ -26,7 +27,7 @@ type IncomingBody = {
 
 type NormalizedLine = {
   productCode: ProductCode;
-  category: "general" | "vip" | "parter";
+  category: "general" | "vip" | "parter" | "scaun";
   name: string;
   durationLabel: string;
   qty: number;
@@ -282,6 +283,20 @@ function validateSelectedDays(
       }
       return { valid: true, days: selected };
 
+    case "SCAUN_1_DAY": {
+      if (selected.length !== 1) {
+        return { valid: false, message: "SCAUN_1_DAY necesită exact 1 zi." };
+      }
+      const day = selected[0];
+      if (day !== "FRI" && day !== "SUN") {
+        return {
+          valid: false,
+          message: "Scaunul tip teatru este disponibil doar Vineri și Duminică.",
+        };
+      }
+      return { valid: true, days: selected };
+    }
+
     default:
       return { valid: false, message: "Produs necunoscut." };
   }
@@ -294,7 +309,8 @@ function computeLine(
 ): NormalizedLine {
   const isVip = productCode.startsWith("VIP_");
   const isParter = productCode.startsWith("PARTER_");
-  const category: "general" | "vip" | "parter" = isParter ? "parter" : isVip ? "vip" : "general";
+  const isScaun = productCode.startsWith("SCAUN_");
+  const category: "general" | "vip" | "parter" | "scaun" = isScaun ? "scaun" : isParter ? "parter" : isVip ? "vip" : "general";
 
   let unitPrice = 0;
   let name = "";
@@ -347,6 +363,12 @@ function computeLine(
       durationLabel = "4 zile";
       unitPrice = 100;
       break;
+    case "SCAUN_1_DAY": {
+      name = "Scaun - 1 zi";
+      durationLabel = "1 zi";
+      unitPrice = 100;
+      break;
+    }
   }
 
   return {

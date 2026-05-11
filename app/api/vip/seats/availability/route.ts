@@ -1,4 +1,4 @@
-// app/api/fanpit/availability/route.ts
+// app/api/vip/seats/availability/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -15,52 +15,28 @@ const DAY_UPPER: Record<DayCodeLower, DayCodeUpper> = {
   mon: "MON",
 };
 
-const DEFAULT_DAYS: DayCodeLower[] = ["fri", "sat", "sun", "mon"];
+// ✅ VIP hard cap: 2000 seats per day
+const VIP_CAP_PER_DAY = 2000;
 
-
-// ✅ Your requested limit:
-const FANPIT_CAP_PER_DAY = 2000;
-
-type FanPitPackageKey =
-  | "FANPIT_1DAY"
-  | "FANPIT_2DAY_FRI_SUN"
-  | "FANPIT_2DAY_FRI_MON"
-  | "FANPIT_2DAY_SUN_MON"
-  | "FANPIT_3DAY_FRI_SUN_MON"
-  | "FANPIT_4DAY_ALL";
+type VipPackageKey = "VIP_1DAY_FRI" | "VIP_1DAY_SAT" | "VIP_1DAY_SUN" | "VIP_1DAY_MON" | "VIP_4DAY";
 
 type PackageAvailability = {
-  key: FanPitPackageKey;
+  key: VipPackageKey;
   label_ro: string;
   days: DayCodeUpper[];
   remaining: number;
 };
 
-const FANPIT_PACKAGES: Array<{ key: FanPitPackageKey; label_ro: string; days: DayCodeUpper[] }> = [
-  { key: "FANPIT_1DAY", label_ro: "Fan Pit - 1 zi", days: [] },
-  { key: "FANPIT_2DAY_FRI_SUN", label_ro: "Fan Pit - 2 zile (Vineri + Duminică)", days: ["FRI", "SUN"] },
-  { key: "FANPIT_2DAY_FRI_MON", label_ro: "Fan Pit - 2 zile (Vineri + Luni)", days: ["FRI", "MON"] },
-  { key: "FANPIT_2DAY_SUN_MON", label_ro: "Fan Pit - 2 zile (Duminică + Luni)", days: ["SUN", "MON"] },
-  { key: "FANPIT_3DAY_FRI_SUN_MON", label_ro: "Fan Pit - 3 zile (Vineri + Duminică + Luni)", days: ["FRI", "SUN", "MON"] },
-  { key: "FANPIT_4DAY_ALL", label_ro: "Fan Pit - 4 zile", days: ["FRI", "SAT", "SUN", "MON"] },
+const VIP_PACKAGES: Array<{ key: VipPackageKey; label_ro: string; days: DayCodeUpper[] }> = [
+  { key: "VIP_1DAY_FRI", label_ro: "VIP - Vineri (29.05)", days: ["FRI"] },
+  { key: "VIP_1DAY_SAT", label_ro: "VIP - Sâmbătă (30.05)", days: ["SAT"] },
+  { key: "VIP_1DAY_SUN", label_ro: "VIP - Duminică (31.05)", days: ["SUN"] },
+  { key: "VIP_1DAY_MON", label_ro: "VIP - Luni (01.06)", days: ["MON"] },
+  { key: "VIP_4DAY", label_ro: "VIP - 4 Zile", days: ["FRI", "SAT", "SUN", "MON"] },
 ];
 
-function minRemainingForDays(
-  remainingByDay: Record<DayCodeUpper, number>,
-  days: DayCodeUpper[],
-) {
-  if (!days.length) return 0;
-  let min = Number.POSITIVE_INFINITY;
-  for (const d of days) {
-    const v = remainingByDay[d];
-    if (!Number.isFinite(v)) return 0;
-    if (v < min) min = v;
-  }
-  return Number.isFinite(min) ? Math.max(0, min) : 0;
-}
-
 function parseDaysParam(value: string | null): DayCodeLower[] {
-  if (!value) return DEFAULT_DAYS;
+  if (!value) return ["fri", "sat", "sun", "mon"];
   const parts = value
     .split(",")
     .map((s) => s.trim().toLowerCase())
@@ -68,9 +44,11 @@ function parseDaysParam(value: string | null): DayCodeLower[] {
 
   const out: DayCodeLower[] = [];
   for (const p of parts) {
-    if (p === "fri" || p === "sat" || p === "sun" || p === "mon") out.push(p);
+    if ((p === "fri" || p === "sat" || p === "sun" || p === "mon") && !out.includes(p as DayCodeLower)) {
+      out.push(p as DayCodeLower);
+    }
   }
-  return out.length ? Array.from(new Set(out)) : DEFAULT_DAYS;
+  return out.length ? out : ["fri", "sat", "sun", "mon"];
 }
 
 function toInt(v: unknown, fallback = 0) {
@@ -82,7 +60,7 @@ function parseCanonicalDaySet(raw: unknown): DayCodeUpper[] {
   const s = String(raw ?? "")
     .trim()
     .toUpperCase();
-  if (!s) return [];
+  if (!s) return ["FRI", "SAT", "SUN", "MON"]; // 4-day includes all days
   const parts = s.split(/[^A-Z]+/).filter(Boolean);
   const unique = Array.from(new Set(parts));
   return unique.filter((d): d is DayCodeUpper =>
@@ -145,12 +123,7 @@ export async function GET(req: Request) {
 
     for (const d of eventDays || []) {
       const code = String((d as any).day_code).toUpperCase() as DayCodeUpper;
-      if (
-        code === "FRI" ||
-        code === "SAT" ||
-        code === "SUN" ||
-        code === "MON"
-      ) {
+      if (code === "FRI" || code === "SAT" || code === "SUN" || code === "MON") {
         dayCodeToEventDayId.set(code, String((d as any).id));
         dayMeta.set(code, {
           event_date: (d as any).event_date ?? null,
@@ -160,36 +133,53 @@ export async function GET(req: Request) {
     }
 
     const eventDayIds = Array.from(dayCodeToEventDayId.values());
+
+    // If no event_days configured, return defaults
     if (eventDayIds.length === 0) {
-      // no event_days configured
       const empty: Record<DayCodeUpper, any> = {
-        FRI: null,
-        SAT: null,
-        SUN: null,
-        MON: null,
-      };
-      for (const du of daysUpper) {
-        empty[du] = {
-          cap: FANPIT_CAP_PER_DAY,
+        FRI: {
+          cap: VIP_CAP_PER_DAY,
           sold: 0,
-          remaining: FANPIT_CAP_PER_DAY,
-          day_code: du,
-          ...dayMeta.get(du),
-        };
-      }
-
-      const remainingByDay: Record<DayCodeUpper, number> = {
-        FRI: (empty.FRI?.remaining as number) ?? FANPIT_CAP_PER_DAY,
-        SAT: (empty.SAT?.remaining as number) ?? FANPIT_CAP_PER_DAY,
-        SUN: (empty.SUN?.remaining as number) ?? FANPIT_CAP_PER_DAY,
-        MON: (empty.MON?.remaining as number) ?? FANPIT_CAP_PER_DAY,
+          remaining: VIP_CAP_PER_DAY,
+          day_code: "FRI",
+          ...dayMeta.get("FRI"),
+        },
+        SAT: {
+          cap: VIP_CAP_PER_DAY,
+          sold: 0,
+          remaining: VIP_CAP_PER_DAY,
+          day_code: "SAT",
+          ...dayMeta.get("SAT"),
+        },
+        SUN: {
+          cap: VIP_CAP_PER_DAY,
+          sold: 0,
+          remaining: VIP_CAP_PER_DAY,
+          day_code: "SUN",
+          ...dayMeta.get("SUN"),
+        },
+        MON: {
+          cap: VIP_CAP_PER_DAY,
+          sold: 0,
+          remaining: VIP_CAP_PER_DAY,
+          day_code: "MON",
+          ...dayMeta.get("MON"),
+        },
       };
 
-      const byPackage = FANPIT_PACKAGES.reduce<Record<string, PackageAvailability>>(
+      const byPackage = VIP_PACKAGES.reduce<Record<string, PackageAvailability>>(
         (acc, p) => {
-          // FANPIT_1DAY is handled on frontend per-day; here we expose per-day remaining via byDay.
-          if (p.key === "FANPIT_1DAY") return acc;
-          const remaining = minRemainingForDays(remainingByDay, p.days);
+          let remaining = VIP_CAP_PER_DAY;
+          if (p.days.length === 1) {
+            remaining = empty[p.days[0]]?.remaining ?? VIP_CAP_PER_DAY;
+          } else if (p.days.length === 4) {
+            remaining = Math.min(
+              empty.FRI?.remaining ?? VIP_CAP_PER_DAY,
+              empty.SAT?.remaining ?? VIP_CAP_PER_DAY,
+              empty.SUN?.remaining ?? VIP_CAP_PER_DAY,
+              empty.MON?.remaining ?? VIP_CAP_PER_DAY,
+            );
+          }
           acc[p.key] = { key: p.key, label_ro: p.label_ro, days: p.days, remaining };
           return acc;
         },
@@ -198,7 +188,7 @@ export async function GET(req: Request) {
 
       return NextResponse.json({
         ok: true,
-        capPerDay: FANPIT_CAP_PER_DAY,
+        capPerDay: VIP_CAP_PER_DAY,
         byDay: empty,
         byPackage,
       });
@@ -216,7 +206,7 @@ export async function GET(req: Request) {
       new Set((oidRows || []).map((r: any) => String(r.order_item_id))),
     );
 
-    // 3) load order_items for those ids
+    // 3) load order_items for those ids (filter for vip category)
     let itemsById = new Map<
       string,
       {
@@ -234,7 +224,8 @@ export async function GET(req: Request) {
       const { data: items, error: itemsErr } = await supabase
         .from("order_items")
         .select("id, order_id, quantity, category, canonical_day_set")
-        .in("id", orderItemIdsWithDays);
+        .in("id", orderItemIdsWithDays)
+        .eq("category", "vip");
 
       if (itemsErr) throw itemsErr;
 
@@ -273,7 +264,7 @@ export async function GET(req: Request) {
       }
     }
 
-    // 5) sold count from order_item_days + paid orders + general category
+    // 5) sold count from order_item_days + paid orders + vip category
     const soldByDayCode: Record<DayCodeUpper, number> = {
       FRI: 0,
       SAT: 0,
@@ -295,8 +286,8 @@ export async function GET(req: Request) {
       const item = itemsById.get(orderItemId);
       if (!item) continue;
 
-      // Fan Pit = category 'general' in DB
-      if (String(item.category).toLowerCase() !== "general") continue;
+      // Only count vip category
+      if (String(item.category).toLowerCase() !== "vip") continue;
 
       // Only count paid orders
       if (!paidOrderIds.has(item.order_id)) continue;
@@ -304,8 +295,7 @@ export async function GET(req: Request) {
       soldByDayCode[code] += Math.max(0, toInt(item.quantity, 0));
     }
 
-    // 6) Fallback: paid general order_items that have canonical_day_set but are missing order_item_days
-    //    (only if your system sometimes doesn't write order_item_days for multi-day products)
+    // 6) Fallback: paid vip order_items that might be missing order_item_days
     // Only query items linked to the event days we care about
     if (paidOrderIds.size > 0 && eventDayIds.length > 0) {
       // Get all order_item_ids linked to our event days (even if not already counted)
@@ -320,15 +310,15 @@ export async function GET(req: Request) {
         );
 
         if (allOrderItemIds.length > 0) {
-          const { data: allGeneralItems, error: allGeneralErr } = await supabase
+          const { data: allVipItems, error: allVipErr } = await supabase
             .from("order_items")
             .select("id, order_id, quantity, category, canonical_day_set")
             .in("id", allOrderItemIds)
-            .eq("category", "general");
+            .eq("category", "vip");
 
-          if (!allGeneralErr && allGeneralItems && allGeneralItems.length > 0) {
+          if (!allVipErr && allVipItems && allVipItems.length > 0) {
             const alreadyCountedIds = new Set(orderItemIdsWithDays);
-            for (const it of allGeneralItems as any[]) {
+            for (const it of allVipItems as any[]) {
               const orderId = String(it.order_id);
               if (!paidOrderIds.has(orderId)) continue; // Only paid orders
 
@@ -350,7 +340,7 @@ export async function GET(req: Request) {
       }
     }
 
-    // 7) Build response only for requested days
+    // 7) Build response for all days
     const byDay: Record<DayCodeUpper, any> = {
       FRI: null,
       SAT: null,
@@ -358,12 +348,12 @@ export async function GET(req: Request) {
       MON: null,
     };
 
-    for (const d of daysUpper) {
+    for (const d of ["FRI", "SAT", "SUN", "MON"] as const) {
       const sold = soldByDayCode[d] || 0;
-      const remaining = Math.max(0, FANPIT_CAP_PER_DAY - sold);
+      const remaining = Math.max(0, VIP_CAP_PER_DAY - sold);
       byDay[d] = {
         day_code: d,
-        cap: FANPIT_CAP_PER_DAY,
+        cap: VIP_CAP_PER_DAY,
         sold,
         remaining,
         ...dayMeta.get(d),
@@ -377,10 +367,21 @@ export async function GET(req: Request) {
       MON: toInt(byDay.MON?.remaining, 0),
     };
 
-    const byPackage = FANPIT_PACKAGES.reduce<Record<string, PackageAvailability>>(
+    const byPackage = VIP_PACKAGES.reduce<Record<string, PackageAvailability>>(
       (acc, p) => {
-        if (p.key === "FANPIT_1DAY") return acc;
-        const remaining = minRemainingForDays(remainingByDay, p.days);
+        let remaining = VIP_CAP_PER_DAY;
+        if (p.days.length === 1) {
+          const dayKey = p.days[0];
+          remaining = remainingByDay[dayKey] ?? 0;
+        } else if (p.days.length === 4) {
+          // 4-day: remaining is the minimum across all days
+          remaining = Math.min(
+            remainingByDay.FRI,
+            remainingByDay.SAT,
+            remainingByDay.SUN,
+            remainingByDay.MON,
+          );
+        }
         acc[p.key] = { key: p.key, label_ro: p.label_ro, days: p.days, remaining };
         return acc;
       },
@@ -389,14 +390,14 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      capPerDay: FANPIT_CAP_PER_DAY,
+      capPerDay: VIP_CAP_PER_DAY,
       byDay,
       byPackage,
     });
   } catch (error) {
-    console.error("[GET /api/fanpit/availability] error:", error);
+    console.error("[GET /api/vip/seats/availability] error:", error);
     const message =
-      error instanceof Error ? error.message : "Unknown error in availability";
+      error instanceof Error ? error.message : "Unknown error in vip seats availability";
     return NextResponse.json(
       { ok: false, error: { message } },
       { status: 500 },
