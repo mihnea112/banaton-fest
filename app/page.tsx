@@ -263,7 +263,7 @@ export default function Home() {
           image: "/images/placeholder-artist-12.jpg",
         },
         {
-          name: "Bernarda Bobovečki",
+          name: "Bernarda Bobovečki & Nova Music Band",
           time: "19:30",
           image: "/images/placeholder-artist-13.jpg",
         },

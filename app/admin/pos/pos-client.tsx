@@ -184,6 +184,99 @@ function variantLabelForLine(line: PosLine): string | null {
   return null;
 }
 
+// --- Free Order Password Modal Component ---
+function FreeOrderPasswordModal({
+  isOpen,
+  onClose,
+  password,
+  onPasswordChange,
+  error,
+  submitting,
+  onSubmit,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  password: string;
+  onPasswordChange: (value: string) => void;
+  error: string | null;
+  submitting: boolean;
+  onSubmit: () => void;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <div className="bg-[#1A0B2E] border border-[#4C2A85] rounded-2xl w-full max-w-md flex flex-col shadow-[0_0_50px_rgba(127,19,236,0.5)] overflow-hidden">
+        <div className="p-6 border-b border-[#4C2A85] flex justify-between items-center bg-[#241242]">
+          <div>
+            <h3 className="text-white text-xl font-bold">Comandă Gratuită</h3>
+            <p className="text-indigo-300 text-sm">Introducere parolă necesară</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-indigo-300 hover:text-white transition-colors"
+            type="button"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <div className="p-6 bg-[#130026]">
+          <div className="rounded-xl border border-[#FFD700]/20 bg-[#FFD700]/5 p-4 mb-6 text-sm text-[#FFD700]">
+            <p className="font-semibold">⚠ Atenție:</p>
+            <p className="mt-2 text-xs text-indigo-200">
+              Această acțiune va genera o comandă cu total <span className="font-bold text-white">0 lei</span>. Această funcție este destinată doar biletelor de promovare sau complimentare.
+            </p>
+          </div>
+
+          <label className="block">
+            <span className="text-xs font-semibold text-indigo-200">
+              Parolă
+            </span>
+            <input
+              type="password"
+              autoFocus
+              value={password}
+              onChange={(e) => onPasswordChange(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === "Enter") {
+                  onSubmit();
+                }
+              }}
+              placeholder="Introdu parola"
+              className="mt-2 h-11 w-full rounded-xl bg-[#1A0B2E] border border-[#432C7A] px-3 text-white outline-none focus:border-[#FFD700]/60 placeholder:text-indigo-400"
+            />
+          </label>
+
+          {error && (
+            <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-100">
+              {error}
+            </div>
+          )}
+
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button
+              onClick={onClose}
+              className="h-11 rounded-xl border border-[#432C7A] bg-[#24123E] text-white font-bold text-sm hover:border-[#4C2A85] transition-colors"
+              type="button"
+            >
+              Anulează
+            </button>
+            <button
+              onClick={onSubmit}
+              disabled={submitting}
+              className="h-11 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FDB931] text-[#24123E] font-bold text-sm hover:shadow-[0_0_20px_rgba(255,215,0,0.3)] disabled:opacity-50 transition-all"
+              type="button"
+            >
+              {submitting ? "Se generează..." : "Confirmă"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function validateLine(line: PosLine): string | null {
   const meta = productMeta(line.productCode);
   const qty = Math.max(1, toInt(line.qty, 1));
@@ -532,90 +625,6 @@ export default function PosClient() {
     void submit(true);
   };
 
-  const FreeOrderPasswordModal = () => {
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-        <div className="bg-[#1A0B2E] border border-[#4C2A85] rounded-2xl w-full max-w-md flex flex-col shadow-[0_0_50px_rgba(127,19,236,0.5)] overflow-hidden">
-          <div className="p-6 border-b border-[#4C2A85] flex justify-between items-center bg-[#241242]">
-            <div>
-              <h3 className="text-white text-xl font-bold">Comandă Gratuită</h3>
-              <p className="text-indigo-300 text-sm">Introducere parolă necesară</p>
-            </div>
-            <button
-              onClick={() => {
-                setShowFreeModal(false);
-                setFreePassword("");
-                setFreePasswordError(null);
-              }}
-              className="text-indigo-300 hover:text-white transition-colors"
-              type="button"
-            >
-              <span className="material-symbols-outlined">close</span>
-            </button>
-          </div>
-
-          <div className="p-6 bg-[#130026]">
-            <div className="rounded-xl border border-[#FFD700]/20 bg-[#FFD700]/5 p-4 mb-6 text-sm text-[#FFD700]">
-              <p className="font-semibold">⚠ Atenție:</p>
-              <p className="mt-2 text-xs text-indigo-200">
-                Această acțiune va genera o comandă cu total <span className="font-bold text-white">0 lei</span>. Această funcție este destinată doar biletelor de promovare sau complimentare.
-              </p>
-            </div>
-
-            <label className="block">
-              <span className="text-xs font-semibold text-indigo-200">
-                Parolă
-              </span>
-              <input
-                type="password"
-                value={freePassword}
-                onChange={(e) => {
-                  setFreePassword(e.target.value);
-                  setFreePasswordError(null);
-                }}
-                onKeyPress={(e) => {
-                  if (e.key === "Enter") {
-                    handleFreeOrderSubmit();
-                  }
-                }}
-                placeholder="Introdu parola"
-                className="mt-2 h-11 w-full rounded-xl bg-[#1A0B2E] border border-[#432C7A] px-3 text-white outline-none focus:border-[#FFD700]/60 placeholder:text-indigo-400"
-              />
-            </label>
-
-            {freePasswordError && (
-              <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-sm text-rose-100">
-                {freePasswordError}
-              </div>
-            )}
-
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <button
-                onClick={() => {
-                  setShowFreeModal(false);
-                  setFreePassword("");
-                  setFreePasswordError(null);
-                }}
-                className="h-11 rounded-xl border border-[#432C7A] bg-[#24123E] text-white font-bold text-sm hover:border-[#4C2A85] transition-colors"
-                type="button"
-              >
-                Anulează
-              </button>
-              <button
-                onClick={handleFreeOrderSubmit}
-                disabled={submitting}
-                className="h-11 rounded-xl bg-gradient-to-r from-[#FFD700] to-[#FDB931] text-[#24123E] font-bold text-sm hover:shadow-[0_0_20px_rgba(255,215,0,0.3)] disabled:opacity-50 transition-all"
-                type="button"
-              >
-                {submitting ? "Se generează..." : "Confirmă"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   // --- VIP UI components ---
   const VipTableSelectorModal = ({
     zoneId,
@@ -743,7 +752,22 @@ export default function PosClient() {
           onClose={() => setVipActiveZone(null)}
         />
       ) : null}
-      {showFreeModal ? <FreeOrderPasswordModal /> : null}
+      <FreeOrderPasswordModal
+        isOpen={showFreeModal}
+        onClose={() => {
+          setShowFreeModal(false);
+          setFreePassword("");
+          setFreePasswordError(null);
+        }}
+        password={freePassword}
+        onPasswordChange={(value) => {
+          setFreePassword(value);
+          setFreePasswordError(null);
+        }}
+        error={freePasswordError}
+        submitting={submitting}
+        onSubmit={handleFreeOrderSubmit}
+      />
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 py-8">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
