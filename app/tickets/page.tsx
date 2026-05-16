@@ -112,8 +112,8 @@ const PRODUCT_I18N: Record<string, { roName?: string; enName?: string; roDesc?: 
     enName: "Parter - 1 Day",
     roDuration: "1 Zi",
     enDuration: "1 Day",
-    roDesc: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 40 RON / Sâmbătă (30.05): 60 RON",
-    enDesc: "Fri (29.05), Sun (31.05) & Mon (01.06): 40 RON / Sat (30.05): 60 RON",
+    roDesc: "Vineri (29.05), Duminică (31.05) și Luni (01.06): 75 RON / Sâmbătă (30.05): 100 RON",
+    enDesc: "Fri (29.05), Sun (31.05) & Mon (01.06): 75 RON / Sat (30.05): 100 RON",
   },
   "scaun-1day": {
     roName: "Scaun - 1 Zi",
