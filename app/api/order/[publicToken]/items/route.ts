@@ -343,25 +343,25 @@ function computeLine(
       name = "Acces VIP - 1 zi";
       durationLabel = "1 zi";
       const d = days[0];
-      unitPrice = d === "SAT" ? 350 : 200;
+      unitPrice = d === "SAT" ? 400 : 300;
       break;
     }
     case "VIP_4_DAY":
       name = "Acces VIP - 4 zile";
       durationLabel = "4 zile";
-      unitPrice = 750;
+      unitPrice = 850;
       break;
     case "PARTER_1_DAY": {
       name = "Parter - 1 zi";
       durationLabel = "1 zi";
       const d = days[0];
-      unitPrice = d === "SAT" ? 60 : 40;
+      unitPrice = d === "SAT" ? 100 : 75;
       break;
     }
     case "PARTER_4_DAY":
       name = "Parter - 4 zile";
       durationLabel = "4 zile";
-      unitPrice = 100;
+      unitPrice = 150;
       break;
     case "SCAUN_1_DAY": {
       name = "Scaun - 1 zi";

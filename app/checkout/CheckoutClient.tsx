@@ -223,8 +223,14 @@ function extractOrderFromApi(payload: unknown): DraftOrder | null {
         r.category ?? r.ticket_category ?? r.access_type ?? "general",
       ).toLowerCase();
 
-      const category: "general" | "vip" =
-        categoryValue === "vip" ? "vip" : "general";
+      const category: "general" | "vip" | "parter" | "scaun" =
+        categoryValue === "vip"
+          ? "vip"
+          : categoryValue === "parter"
+            ? "parter"
+            : categoryValue === "scaun"
+              ? "scaun"
+              : "general";
 
       const qty = toNumber(r.qty ?? r.quantity ?? r.count ?? r.seats ?? 1);
 
